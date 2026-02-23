@@ -41,7 +41,7 @@ export default function StudentSetupPage() {
 
     const { data, error: sessionError } = await supabase.auth.getSession();
     if (sessionError) {
-      setPageError(`���� Ȯ�� ����: ${sessionError.message}`);
+      setPageError(`세션 확인 실패: ${sessionError.message}`);
       setPageState("ready");
       return;
     }
@@ -59,7 +59,7 @@ export default function StudentSetupPage() {
       .single<ProfileRow>();
 
     if (meError) {
-      setPageError(`������ ��ȸ ����: ${meError.message}`);
+      setPageError(`프로필 조회 실패: ${meError.message}`);
       setPageState("ready");
       return;
     }
@@ -101,17 +101,17 @@ export default function StudentSetupPage() {
     const trimmedClassLabel = classLabel.trim();
 
     if (!trimmedName) {
-      setSubmitError("�̸��� �Է��� �ּ���.");
+      setSubmitError("이름을 입력해 주세요.");
       return;
     }
 
     if (!schoolLevel) {
-      setSubmitError("�б����� ������ �ּ���.");
+      setSubmitError("학교급을 선택해 주세요.");
       return;
     }
 
     if (!gradeOptions.includes(Number(grade))) {
-      setSubmitError("�г��� �ùٸ��� ������ �ּ���.");
+      setSubmitError("학년을 올바르게 선택해 주세요.");
       return;
     }
 
@@ -135,11 +135,11 @@ export default function StudentSetupPage() {
         .eq("id", data.session.user.id);
 
       if (updateError) {
-        setSubmitError(`���� ����: ${updateError.message}`);
+        setSubmitError(`저장 실패: ${updateError.message}`);
         return;
       }
 
-      setSuccessMessage("�������� ����Ǿ����ϴ�. ��� �� Ȩ���� �̵��մϴ�.");
+      setSuccessMessage("학생 정보가 저장되었습니다. 잠시 후 홈으로 이동합니다.");
       setTimeout(() => {
         router.replace("/");
       }, 500);
@@ -150,7 +150,7 @@ export default function StudentSetupPage() {
 
   if (pageState === "loading") {
     return (
-      <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] flex items-center justify-center">�ε� ��...</main>
+      <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] flex items-center justify-center">로딩 중...</main>
     );
   }
 
@@ -158,9 +158,9 @@ export default function StudentSetupPage() {
     <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6">
       <div className="mx-auto w-full max-w-xl rounded-2xl border border-[#1E1E26] bg-[#121218] p-6">
         <h1 className="text-2xl font-semibold">
-          <span className="text-[#D4AF37]">MVS</span> �л� ������ ����
+          <span className="text-[#D4AF37]">MVS</span> 학생 프로필 설정
         </h1>
-        <p className="mt-2 text-sm text-[#B8B8C3]">�н� ������ ���� �⺻ ������ �Է��� �ּ���.</p>
+        <p className="mt-2 text-sm text-[#B8B8C3]">학습 관리를 위해 기본 정보를 입력해 주세요.</p>
 
         {pageError && (
           <div className="mt-4 rounded-xl border border-[#6A2B2B] bg-[#2A1414] p-3 text-sm text-[#FFB4B4]">{pageError}</div>
@@ -177,33 +177,33 @@ export default function StudentSetupPage() {
         {!pageError && (
           <form className="mt-6 space-y-4" onSubmit={(e) => void handleSubmit(e)}>
             <label className="block space-y-2">
-              <span className="text-sm text-[#D5D5DD]">�̸� *</span>
+              <span className="text-sm text-[#D5D5DD]">이름 *</span>
               <input
                 className="w-full rounded-xl border border-[#2A2A35] bg-[#0B0B0E] px-3 py-2 text-[#F5F5F7] outline-none focus:border-[#D4AF37]"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="�̸�"
+                placeholder="이름"
                 required
               />
             </label>
 
             <label className="block space-y-2">
-              <span className="text-sm text-[#D5D5DD]">�б��� *</span>
+              <span className="text-sm text-[#D5D5DD]">학교급 *</span>
               <select
                 className="w-full rounded-xl border border-[#2A2A35] bg-[#0B0B0E] px-3 py-2 text-[#F5F5F7] outline-none focus:border-[#D4AF37]"
                 value={schoolLevel}
                 onChange={(e) => handleSchoolLevelChange((e.target.value as SchoolLevel) || "")}
                 required
               >
-                <option value="">����</option>
-                <option value="elem">��</option>
-                <option value="mid">��</option>
-                <option value="high">��</option>
+                <option value="">선택</option>
+                <option value="elem">초</option>
+                <option value="mid">중</option>
+                <option value="high">고</option>
               </select>
             </label>
 
             <label className="block space-y-2">
-              <span className="text-sm text-[#D5D5DD]">�г� *</span>
+              <span className="text-sm text-[#D5D5DD]">학년 *</span>
               <select
                 className="w-full rounded-xl border border-[#2A2A35] bg-[#0B0B0E] px-3 py-2 text-[#F5F5F7] outline-none focus:border-[#D4AF37] disabled:opacity-60"
                 value={grade}
@@ -211,7 +211,7 @@ export default function StudentSetupPage() {
                 required
                 disabled={!schoolLevel}
               >
-                <option value="">����</option>
+                <option value="">선택</option>
                 {gradeOptions.map((value) => (
                   <option key={value} value={value}>
                     {value}
@@ -221,12 +221,12 @@ export default function StudentSetupPage() {
             </label>
 
             <label className="block space-y-2">
-              <span className="text-sm text-[#D5D5DD]">�� (����)</span>
+              <span className="text-sm text-[#D5D5DD]">반 (선택)</span>
               <input
                 className="w-full rounded-xl border border-[#2A2A35] bg-[#0B0B0E] px-3 py-2 text-[#F5F5F7] outline-none focus:border-[#D4AF37]"
                 value={classLabel}
                 onChange={(e) => setClassLabel(e.target.value)}
-                placeholder="��: 3��"
+                placeholder="예: 3반"
               />
             </label>
 
@@ -235,7 +235,7 @@ export default function StudentSetupPage() {
               className="w-full rounded-xl bg-[#D4AF37] px-4 py-2 font-semibold text-black disabled:opacity-60"
               disabled={saving}
             >
-              {saving ? "���� ��..." : "�����ϱ�"}
+              {saving ? "저장 중..." : "저장하기"}
             </button>
           </form>
         )}

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -34,7 +34,7 @@ export default function GenerateLinkCodePage() {
 
     const { data, error: sessionError } = await supabase.auth.getSession();
     if (sessionError) {
-      setPageError(`���� Ȯ�� ����: ${sessionError.message}`);
+      setPageError(`\uC138\uC158 \uD655\uC778 \uC2E4\uD328: ${sessionError.message}`);
       setPageState("ready");
       return;
     }
@@ -52,7 +52,7 @@ export default function GenerateLinkCodePage() {
       .single<{ role: string }>();
 
     if (meError) {
-      setPageError(`���� Ȯ�� ����: ${meError.message}`);
+      setPageError(`\uAD8C\uD55C \uD655\uC778 \uC2E4\uD328: ${meError.message}`);
       setPageState("ready");
       return;
     }
@@ -65,13 +65,13 @@ export default function GenerateLinkCodePage() {
     const { data: studentRows, error: studentsError } = await supabase.rpc("list_students");
 
     if (studentsError) {
-      setPageError(`�л� ��� ��ȸ ����: ${studentsError.message}`);
+      setPageError(`\uD559\uC0DD \uBAA9\uB85D \uC870\uD68C \uC2E4\uD328: ${studentsError.message}`);
       setPageState("ready");
       return;
     }
 
     if (!Array.isArray(studentRows)) {
-      setPageError("�л� ��� ���� ������ �ùٸ��� �ʽ��ϴ�. �迭 �����Ͱ� �ʿ��մϴ�.");
+      setPageError("\uD559\uC0DD \uBAA9\uB85D \uC751\uB2F5 \uD615\uC2DD\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uBC30\uC5F4 \uB370\uC774\uD130\uAC00 \uD544\uC694\uD569\uB2C8\uB2E4.");
       setStudents([]);
       setPageState("ready");
       return;
@@ -97,12 +97,12 @@ export default function GenerateLinkCodePage() {
 
       const res = data as IssueResult;
       if (!res || (res as any).ok !== true || !(res as any).code) {
-        throw new Error("�ڵ� �߱� ������ �ùٸ��� �ʽ��ϴ�.");
+        throw new Error("\uCF54\uB4DC \uBC1C\uAE09 \uACB0\uACFC\uAC00 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.");
       }
 
       setGeneratedCodes((prev) => ({ ...prev, [studentId]: (res as any).code }));
     } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : "�ڵ� �߱� �� ������ �߻��߽��ϴ�.");
+      setActionError(err instanceof Error ? err.message : "\uCF54\uB4DC \uBC1C\uAE09 \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.");
     } finally {
       setBusyStudentId(null);
     }
@@ -111,7 +111,7 @@ export default function GenerateLinkCodePage() {
   if (pageState === "loading") {
     return (
       <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] flex items-center justify-center">
-        �ε� ��...
+        {"\uB85C\uB529 \uC911..."}
       </main>
     );
   }
@@ -120,9 +120,9 @@ export default function GenerateLinkCodePage() {
     <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6">
       <div className="mx-auto w-full max-w-3xl rounded-2xl border border-[#1E1E26] bg-[#121218] p-6">
         <h1 className="text-2xl font-semibold">
-          <span className="text-[#D4AF37]">MVS</span> �л� ��ũ �ڵ� �߱�
+          <span className="text-[#D4AF37]">MVS</span> {"\uD559\uC0DD \uB9C1\uD06C \uCF54\uB4DC \uBC1C\uAE09"}
         </h1>
-        <p className="mt-2 text-sm text-[#B8B8C3]">����/���� �������� �л��� ��ȣ�� ���� �ڵ带 �߱��մϴ�.</p>
+        <p className="mt-2 text-sm text-[#B8B8C3]">{"\uC6D0\uC7A5/\uAD50\uC0AC \uACC4\uC815\uC5D0\uC11C \uD559\uC0DD\uC744 \uBCF4\uD638\uC790\uC640 \uC5F0\uACB0\uD560 \uC218 \uC788\uB294 \uCF54\uB4DC\uB97C \uBC1C\uAE09\uD569\uB2C8\uB2E4."}</p>
 
         {pageError && (
           <div className="mt-4 rounded-xl border border-[#6A2B2B] bg-[#2A1414] p-3 text-sm text-[#FFB4B4]">
@@ -139,7 +139,7 @@ export default function GenerateLinkCodePage() {
         <div className="mt-6 space-y-3">
           {students.length === 0 ? (
             <div className="rounded-xl border border-[#1E1E26] bg-[#0B0B0E] p-4 text-sm text-[#B8B8C3]">
-              �л� ����(role=student)�� �����ϴ�.
+              {"\uD559\uC0DD \uD504\uB85C\uD544(role=student)\uC774 \uC5C6\uC2B5\uB2C8\uB2E4."}
             </div>
           ) : (
             students.map((student) => {
@@ -152,9 +152,9 @@ export default function GenerateLinkCodePage() {
                   className="rounded-xl border border-[#1E1E26] bg-[#0B0B0E] p-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
                 >
                   <div className="min-w-0">
-                    <div className="font-medium text-[#F5F5F7]">{student.name || "�̸� ����"}</div>
-                    <div className="text-sm text-[#B8B8C3] truncate">{student.email || "�̸��� ����"}</div>
-                    {issuedCode && <div className="mt-2 text-sm text-[#D4AF37]">�߱� �ڵ�: {issuedCode}</div>}
+                    <div className="font-medium text-[#F5F5F7]">{student.name || "\uC774\uB984 \uC5C6\uC74C"}</div>
+                    <div className="text-sm text-[#B8B8C3] truncate">{student.email || "\uC774\uBA54\uC77C \uC5C6\uC74C"}</div>
+                    {issuedCode && <div className="mt-2 text-sm text-[#D4AF37]">{"\uBC1C\uAE09 \uCF54\uB4DC"}: {issuedCode}</div>}
                   </div>
 
                   <button
@@ -162,7 +162,7 @@ export default function GenerateLinkCodePage() {
                     onClick={() => void handleIssueCode(student.id)}
                     disabled={isBusy}
                   >
-                    {isBusy ? "�߱� ��..." : "�ڵ� �߱�"}
+                    {isBusy ? "\uBC1C\uAE09 \uC911..." : "\uCF54\uB4DC \uBC1C\uAE09"}
                   </button>
                 </div>
               );

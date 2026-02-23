@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -30,7 +30,7 @@ export default function NewAnnouncementPage() {
     } = await supabase.auth.getSession();
 
     if (sessionError) {
-      setError(`���� Ȯ�� ����: ${sessionError.message}`);
+      setError(`\uC138\uC158 \uD655\uC778 \uC2E4\uD328: ${sessionError.message}`);
       setLoading(false);
       return;
     }
@@ -49,7 +49,7 @@ export default function NewAnnouncementPage() {
       .single<{ role: string }>();
 
     if (meError) {
-      setError(`���� Ȯ�� ����: ${meError.message}`);
+      setError(`\uAD8C\uD55C \uD655\uC778 \uC2E4\uD328: ${meError.message}`);
       setLoading(false);
       return;
     }
@@ -70,7 +70,7 @@ export default function NewAnnouncementPage() {
     const b = body.trim();
 
     if (!t || !b) {
-      setError("����� ������ �Է��� �ּ���.");
+      setError("\uC81C\uBAA9\uACFC \uB0B4\uC6A9\uC744 \uC785\uB825\uD574 \uC8FC\uC138\uC694.");
       return;
     }
 
@@ -86,7 +86,7 @@ export default function NewAnnouncementPage() {
       }
 
       if (!user) {
-        setError("�α��� ������ �����ϴ�.");
+        setError("\uB85C\uADF8\uC778 \uC815\uBCF4\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.");
         return;
       }
 
@@ -102,12 +102,12 @@ export default function NewAnnouncementPage() {
 
       setTitle("");
       setBody("");
-      setSuccess("���������� ��ϵǾ����ϴ�.");
+      setSuccess("\uACF5\uC9C0\uC0AC\uD56D\uC774 \uB4F1\uB85D\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
       setTimeout(() => {
         router.replace("/announcements");
       }, 500);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "���� ��� �� ������ �߻��߽��ϴ�.");
+      setError(e instanceof Error ? e.message : "\uACF5\uC9C0 \uB4F1\uB85D \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.");
     } finally {
       setSubmitting(false);
     }
@@ -116,7 +116,7 @@ export default function NewAnnouncementPage() {
   if (loading) {
     return (
       <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] flex items-center justify-center">
-        �ε� ��...
+        {"\uB85C\uB529 \uC911..."}
       </main>
     );
   }
@@ -125,7 +125,7 @@ export default function NewAnnouncementPage() {
     <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6">
       <div className="mx-auto w-full max-w-2xl rounded-2xl border border-[#1E1E26] bg-[#121218] p-6">
         <h1 className="text-2xl font-semibold">
-          <span className="text-[#D4AF37]">MVS</span> ���� ���
+          <span className="text-[#D4AF37]">MVS</span> {"\uACF5\uC9C0 \uB4F1\uB85D"}
         </h1>
 
         {error && (
@@ -136,25 +136,25 @@ export default function NewAnnouncementPage() {
 
         {success && (
           <div className="mt-4 rounded-xl border border-[#2B6A3A] bg-[#142A1B] p-3 text-sm text-[#B8F5C6]">
-            {success} <Link href="/announcements" className="underline">���� ������� �̵�</Link>
+            {success} <Link href="/announcements" className="underline">{"\uACF5\uC9C0 \uBAA9\uB85D\uC73C\uB85C \uC774\uB3D9"}</Link>
           </div>
         )}
 
-        <label className="block text-sm mt-6 mb-2 text-[#B8B8C3]">����</label>
+        <label className="block text-sm mt-6 mb-2 text-[#B8B8C3]">{"\uC81C\uBAA9"}</label>
         <input
           className="w-full rounded-xl border border-[#1E1E26] bg-[#0B0B0E] px-4 py-3 outline-none focus:ring-2 focus:ring-[#D4AF37]"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           maxLength={200}
-          placeholder="������ �Է��ϼ���"
+          placeholder={"\uC81C\uBAA9\uC744 \uC785\uB825\uD558\uC138\uC694"}
         />
 
-        <label className="block text-sm mt-4 mb-2 text-[#B8B8C3]">����</label>
+        <label className="block text-sm mt-4 mb-2 text-[#B8B8C3]">{"\uB0B4\uC6A9"}</label>
         <textarea
           className="min-h-40 w-full rounded-xl border border-[#1E1E26] bg-[#0B0B0E] px-4 py-3 outline-none focus:ring-2 focus:ring-[#D4AF37]"
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          placeholder="������ �Է��ϼ���"
+          placeholder={"\uB0B4\uC6A9\uC744 \uC785\uB825\uD558\uC138\uC694"}
         />
 
         <button
@@ -162,7 +162,7 @@ export default function NewAnnouncementPage() {
           onClick={() => void submit()}
           disabled={submitting}
         >
-          {submitting ? "��� ��..." : "���� ���"}
+          {submitting ? "\uB4F1\uB85D \uC911..." : "\uACF5\uC9C0 \uB4F1\uB85D"}
         </button>
       </div>
     </main>

@@ -70,10 +70,10 @@ function addDaysYmd(baseYmd: string, days: number): string {
 }
 
 function getManualSchoolLevelLabel(level: string | null): string {
-  if (level === "elem") return "��";
-  if (level === "mid") return "��";
-  if (level === "high") return "��";
-  return "���Է�";
+  if (level === "elem") return "\uCD08";
+  if (level === "mid") return "\uC911";
+  if (level === "high") return "\uACE0";
+  return "\uBBF8\uC785\uB825";
 }
 
 export default function OwnerConsultRequestsPage() {
@@ -153,7 +153,7 @@ export default function OwnerConsultRequestsPage() {
     } = await supabase.auth.getSession();
 
     if (sessionError) {
-      setError(`���� Ȯ�� ����: ${sessionError.message}`);
+      setError(`\uC138\uC158 \uD655\uC778 \uC2E4\uD328: ${sessionError.message}`);
       setLoading(false);
       return;
     }
@@ -172,7 +172,7 @@ export default function OwnerConsultRequestsPage() {
       .single<{ role: string }>();
 
     if (roleError) {
-      setError(`���� Ȯ�� ����: ${roleError.message}`);
+      setError(`\uAD8C\uD55C \uD655\uC778 \uC2E4\uD328: ${roleError.message}`);
       setLoading(false);
       return;
     }
@@ -197,7 +197,7 @@ export default function OwnerConsultRequestsPage() {
       .returns<ConsultationRequest[]>();
 
     if (reqError) {
-      setError(`��û ��� ��ȸ ����: ${reqError.message}`);
+      setError(`\uC694\uCCAD \uBAA9\uB85D \uC870\uD68C \uC2E4\uD328: ${reqError.message}`);
       return;
     }
 
@@ -230,7 +230,7 @@ export default function OwnerConsultRequestsPage() {
       .returns<ProfileBasic[]>();
 
     if (profilesError) {
-      setError(`������ ��ȸ ����: ${profilesError.message}`);
+      setError(`\uD504\uB85C\uD544 \uC870\uD68C \uC2E4\uD328: ${profilesError.message}`);
       return;
     }
 
@@ -283,7 +283,7 @@ export default function OwnerConsultRequestsPage() {
           updateError.code === "23505");
       setError(
         isConfirmConflict
-          ? "�̹� �ش� �ð��� �ٸ� ������ Ȯ���Ǿ����ϴ�. ���ΰ�ħ �� Ȯ���� �ּ���."
+          ? "\uC774\uBBF8 \uD574\uB2F9 \uC2DC\uAC04\uC5D0 \uB2E4\uB978 \uC694\uCCAD\uC774 \uD655\uC815\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uC0C8\uB85C\uACE0\uCE68 \uD6C4 \uD655\uC778\uD574 \uC8FC\uC138\uC694."
           : msg
       );
       setActionBusyKey(null);
@@ -292,7 +292,7 @@ export default function OwnerConsultRequestsPage() {
 
     await loadRequests();
     setActionBusyKey(null);
-    setSuccess("���°� ����Ǿ����ϴ�.");
+    setSuccess("\uC0C1\uD0DC\uAC00 \uBCC0\uACBD\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
     setEditingId(null);
   };
 
@@ -310,14 +310,14 @@ export default function OwnerConsultRequestsPage() {
       .eq("id", row.id);
 
     if (updateError) {
-      setError(`�޸� ���� ����: ${updateError.message}`);
+      setError(`\uBA54\uBAA8 \uC800\uC7A5 \uC2E4\uD328: ${updateError.message}`);
       setActionBusyKey(null);
       return;
     }
 
     await loadRequests();
     setActionBusyKey(null);
-    setSuccess("�޸� ����Ǿ����ϴ�.");
+    setSuccess("\uBA54\uBAA8\uAC00 \uC800\uC7A5\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
   };
 
   const fmt = (iso: string) => {
@@ -329,7 +329,7 @@ export default function OwnerConsultRequestsPage() {
   if (loading) {
     return (
       <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] flex items-center justify-center">
-        �ε� ��...
+        {"\uB85C\uB529 \uC911..."}
       </main>
     );
   }
@@ -339,7 +339,7 @@ export default function OwnerConsultRequestsPage() {
       <div className="mx-auto w-full max-w-5xl rounded-2xl border border-[#1E1E26] bg-[#121218] p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-2xl font-semibold">
-            <span className="text-[#D4AF37]">MVS</span> ��� ��û ����
+            <span className="text-[#D4AF37]">MVS</span> {"\uC0C1\uB2F4 \uC694\uCCAD \uAD00\uB9AC"}
             <span
               className={`ml-3 inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${
                 requestedCount > 0
@@ -347,7 +347,7 @@ export default function OwnerConsultRequestsPage() {
                   : "border-[#2A2A35] bg-[#14141A] text-[#6F6F7D]"
               }`}
             >
-              ��� {requestedCount}
+              {"\uC694\uCCAD"} {requestedCount}
             </span>
           </h1>
           <button
@@ -355,7 +355,7 @@ export default function OwnerConsultRequestsPage() {
             className="rounded-xl border border-[#1E1E26] px-3 py-2 text-xs text-[#B8B8C3] hover:text-[#F5F5F7]"
             onClick={() => setAutoRefresh((prev) => !prev)}
           >
-            �ڵ� ����: {autoRefresh ? "����" : "����"}
+            {"\uC790\uB3D9 \uAC31\uC2E0:"} {autoRefresh ? "\uCF1C\uC9D0" : "\uAEBC\uC9D0"}
           </button>
         </div>
 
@@ -376,12 +376,12 @@ export default function OwnerConsultRequestsPage() {
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
           >
-            <option value="all">��ü</option>
-            <option value="requested">���</option>
-            <option value="confirmed">Ȯ��</option>
-            <option value="canceled">���</option>
-            <option value="done">�Ϸ�</option>
-            <option value="no_show">���</option>
+            <option value="all">{"\uC804\uCCB4"}</option>
+            <option value="requested">{"\uC694\uCCAD"}</option>
+            <option value="confirmed">{"\uD655\uC815"}</option>
+            <option value="canceled">{"\uCDE8\uC18C"}</option>
+            <option value="done">{"\uC644\uB8CC"}</option>
+            <option value="no_show">{"\uB178\uC1FC"}</option>
           </select>
           <input
             type="date"
@@ -395,23 +395,23 @@ export default function OwnerConsultRequestsPage() {
               className="rounded-xl border border-[#1E1E26] px-3 py-2 text-sm text-[#B8B8C3] hover:text-[#F5F5F7]"
               onClick={() => setDateFilter(kstTodayYmd())}
             >
-              ����
+              {"\uC624\uB298"}
             </button>
             <button
               type="button"
               className="rounded-xl border border-[#1E1E26] px-3 py-2 text-sm text-[#B8B8C3] hover:text-[#F5F5F7]"
               onClick={() => setDateFilter(addDaysYmd(kstTodayYmd(), 1))}
             >
-              ����
+              {"\uB0B4\uC77C"}
             </button>
           </div>
         </div>
-        <div className="mt-2 text-xs text-[#8D8D98]">ǥ��: {filteredRequests.length} / ��ü: {requests.length}</div>
+        <div className="mt-2 text-xs text-[#8D8D98]">{"\uD45C\uC2DC"}: {filteredRequests.length} / {"\uC804\uCCB4"}: {requests.length}</div>
 
         <div className="mt-6 space-y-3">
           {filteredRequests.length === 0 ? (
             <div className="rounded-xl border border-[#1E1E26] bg-[#0B0B0E] p-4 text-sm text-[#B8B8C3]">
-              {requests.length === 0 ? "��� ��û�� �����ϴ�." : "���� ���ǿ� �´� ��� ��û�� �����ϴ�."}
+              {requests.length === 0 ? "\uC0C1\uB2F4 \uC694\uCCAD\uC774 \uC5C6\uC2B5\uB2C8\uB2E4." : "\uD604\uC7AC \uD544\uD130\uC5D0 \uB9DE\uB294 \uC0C1\uB2F4 \uC694\uCCAD\uC774 \uC5C6\uC2B5\uB2C8\uB2E4."}
             </div>
           ) : (
             filteredRequests.map((row) => {
@@ -419,14 +419,14 @@ export default function OwnerConsultRequestsPage() {
               const guardian = profileMap[row.guardian_id];
               const hasResolvedStudent = !!student;
               const manualSchoolLevel = getManualSchoolLevelLabel(row.manual_school_level);
-              const manualGradeText = row.manual_grade != null ? `${row.manual_grade}�г�` : "���Է�";
-              const manualNameText = row.manual_student_name?.trim() || "�̸�����";
+              const manualGradeText = row.manual_grade != null ? `${row.manual_grade}\uD559\uB144` : "\uBBF8\uC785\uB825";
+              const manualNameText = row.manual_student_name?.trim() || "\uC774\uB984\uC5C6\uC74C";
               const manualClassText = row.manual_class_label?.trim() ? ` (${row.manual_class_label.trim()})` : "";
               const manualStudentNoText = row.manual_student_no?.trim() || "";
               const studentLine = hasResolvedStudent
-                ? (student?.name ?? "�̸� ����") + (student?.email ? ` (${student.email})` : "")
+                ? (student?.name ?? "\uC774\uB984 \uC5C6\uC74C") + (student?.email ? ` (${student.email})` : "")
                 : `${manualSchoolLevel} ${manualGradeText} ${manualNameText}${manualClassText}`;
-              const guardianLine = guardian?.email || row.manual_guardian_contact?.trim() || "�̸��� ����";
+              const guardianLine = guardian?.email || row.manual_guardian_contact?.trim() || "\uC774\uBA54\uC77C \uC5C6\uC74C";
               const contentText = row.manual_consultation_content?.trim() || row.notes || "-";
               const isRequested = row.status === "requested";
               const isConfirmed = row.status === "confirmed";
@@ -454,25 +454,25 @@ export default function OwnerConsultRequestsPage() {
                   </div>
 
                   <div className="mt-2 text-sm text-[#B8B8C3]">
-                    �л�: {studentLine}
+                    {"\uD559\uC0DD"}: {studentLine}
                     {!hasResolvedStudent && manualStudentNoText && (
-                      <span className="ml-2 text-xs text-[#8D8D98]">/ �й� {manualStudentNoText}</span>
+                      <span className="ml-2 text-xs text-[#8D8D98]">/ {"\uD559\uBC88"} {manualStudentNoText}</span>
                     )}
                   </div>
-                  <div className="mt-1 text-sm text-[#B8B8C3]">��ȣ��: {guardianLine}</div>
-                  <div className="mt-1 text-sm text-[#B8B8C3]">����: {row.type}</div>
-                  <div className="mt-1 text-sm text-[#B8B8C3]">����: {contentText}</div>
+                  <div className="mt-1 text-sm text-[#B8B8C3]">{"\uBCF4\uD638\uC790"}: {guardianLine}</div>
+                  <div className="mt-1 text-sm text-[#B8B8C3]">{"\uC720\uD615"}: {row.type}</div>
+                  <div className="mt-1 text-sm text-[#B8B8C3]">{"\uB0B4\uC6A9"}: {contentText}</div>
 
                   <button
                     className="mt-3 rounded-xl border border-[#1E1E26] px-3 py-2 text-sm text-[#B8B8C3] hover:text-[#F5F5F7]"
                     onClick={() => setEditingId((prev) => (prev === row.id ? null : row.id))}
                   >
-                    {editingId === row.id ? "��Ʈ �ݱ�" : "��Ʈ/ó��"}
+                    {editingId === row.id ? "\uB178\uD2B8 \uB2EB\uAE30" : "\uB178\uD2B8/\uCC98\uB9AC"}
                   </button>
 
                   {editingId === row.id && (
                     <div className="mt-3">
-                      <label className="mb-2 block text-xs text-[#B8B8C3]">����/���� �޸�</label>
+                      <label className="mb-2 block text-xs text-[#B8B8C3]">{"\uC6D0\uC7A5/\uAD50\uC0AC \uBA54\uBAA8"}</label>
                       <textarea
                         className="min-h-24 w-full rounded-xl border border-[#1E1E26] bg-[#121218] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#D4AF37]"
                         value={ownerNotes[row.id] ?? ""}
@@ -488,7 +488,7 @@ export default function OwnerConsultRequestsPage() {
                         onClick={() => void saveOwnerNote(row)}
                         disabled={isNoteBusy}
                       >
-                        {isNoteBusy ? "���� ��..." : "�޸� ����"}
+                        {isNoteBusy ? "\uC800\uC7A5 \uC911..." : "\uBA54\uBAA8 \uC800\uC7A5"}
                       </button>
                     </div>
                   )}
@@ -500,14 +500,14 @@ export default function OwnerConsultRequestsPage() {
                         onClick={() => void applyStatus(row, "confirmed")}
                         disabled={isConfirmBusy}
                       >
-                        Ȯ��
+                        {"\uD655\uC815"}
                       </button>
                       <button
                         className="rounded-xl border border-[#1E1E26] px-3 py-2 text-sm text-[#B8B8C3] hover:text-[#F5F5F7] disabled:opacity-60"
                         onClick={() => void applyStatus(row, "canceled")}
                         disabled={isCancelBusy}
                       >
-                        ����/���
+                        {"\uCDE8\uC18C/\uBC18\uB824"}
                       </button>
                     </div>
                   )}
@@ -518,14 +518,14 @@ export default function OwnerConsultRequestsPage() {
                         onClick={() => void applyStatus(row, "done")}
                         disabled={isDoneBusy}
                       >
-                        �Ϸ�
+                        {"\uC644\uB8CC"}
                       </button>
                       <button
                         className="rounded-xl border border-[#1E1E26] px-3 py-2 text-sm text-[#B8B8C3] hover:text-[#F5F5F7] disabled:opacity-60"
                         onClick={() => void applyStatus(row, "no_show")}
                         disabled={isNoShowBusy}
                       >
-                        ���
+                        {"\uB178\uC1FC"}
                       </button>
                     </div>
                   )}

@@ -1,5 +1,10 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Project Docs
+
+- Owner account switch (new owner onboarding): `docs/owner-account-switch.md`
+- DB migration apply guide: `docs/db-migrations-apply.md`
+
 ## Getting Started
 
 First, run the development server:

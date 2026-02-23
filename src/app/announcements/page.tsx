@@ -32,7 +32,7 @@ export default function AnnouncementsPage() {
     } = await supabase.auth.getSession();
 
     if (sessionError) {
-      setError(`���� Ȯ�� ����: ${sessionError.message}`);
+      setError(`세션 확인 실패: ${sessionError.message}`);
       setLoading(false);
       return;
     }
@@ -50,7 +50,7 @@ export default function AnnouncementsPage() {
       setReadIds(new Set(readRows.map((row) => row.announcement_id)));
       setLoading(false);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "���� ��ȸ�� �����߽��ϴ�.");
+      setError(e instanceof Error ? e.message : "공지 조회에 실패했습니다.");
       setLoading(false);
     }
   };
@@ -74,7 +74,7 @@ export default function AnnouncementsPage() {
   if (loading) {
     return (
       <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] flex items-center justify-center">
-        �ε� ��...
+        로딩 중...
       </main>
     );
   }
@@ -83,9 +83,9 @@ export default function AnnouncementsPage() {
     <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6">
       <div className="mx-auto w-full max-w-3xl rounded-2xl border border-[#1E1E26] bg-[#121218] p-6">
         <h1 className="text-2xl font-semibold">
-          <span className="text-[#D4AF37]">MVS</span> ��������
+          <span className="text-[#D4AF37]">MVS</span> 공지사항
         </h1>
-        <p className="mt-2 text-xs text-[#6F6F7D]">���� Ŭ�� �� �� ����</p>
+        <p className="mt-2 text-xs text-[#6F6F7D]">공지 클릭 시 상세 보기</p>
 
         <div className="mt-4 flex items-center justify-between gap-3">
           <div className="inline-flex rounded-xl border border-[#1E1E26] bg-[#0B0B0E] p-1 text-sm">
@@ -95,7 +95,7 @@ export default function AnnouncementsPage() {
               }`}
               onClick={() => setFilterMode("all")}
             >
-              ��ü
+              전체
             </button>
             <button
               className={`rounded-lg px-3 py-1.5 ${
@@ -103,10 +103,10 @@ export default function AnnouncementsPage() {
               }`}
               onClick={() => setFilterMode("unread")}
             >
-              ��������
+              미읽음만
             </button>
           </div>
-          <div className="text-xs text-[#B8B8C3]">������ {unreadCount}��</div>
+          <div className="text-xs text-[#B8B8C3]">미읽음 {unreadCount}개</div>
         </div>
 
         {error && (
@@ -118,7 +118,7 @@ export default function AnnouncementsPage() {
         <div className="mt-6 space-y-3">
           {visibleAnnouncements.length === 0 ? (
             <div className="rounded-xl border border-[#1E1E26] bg-[#0B0B0E] p-4 text-sm text-[#B8B8C3]">
-              {filterMode === "unread" ? "������ ���������� �����ϴ�." : "��ϵ� ���������� �����ϴ�."}
+              {filterMode === "unread" ? "미읽음 공지사항이 없습니다." : "등록된 공지사항이 없습니다."}
             </div>
           ) : (
             visibleAnnouncements.map((item) => {
@@ -139,7 +139,7 @@ export default function AnnouncementsPage() {
                           : "border-[#6A5B2B] bg-[#2A2414] text-[#F2DE9B]"
                       }`}
                     >
-                      {isRead ? "����" : "������"}
+                      {isRead ? "읽음" : "미읽음"}
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-[#6F6F7D]">{formatCreatedAt(item.created_at)}</p>

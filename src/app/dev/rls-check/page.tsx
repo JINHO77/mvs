@@ -249,7 +249,7 @@ export default function DevRlsCheckPage() {
                 onClick={() => void runListMyStudents()}
                 disabled={running !== null}
               >
-                �� �ڳ� ��ȸ(list_my_students)
+                {"\uB0B4 \uC790\uB140 \uC870\uD68C(list_my_students)"}
               </button>
               <button
                 type="button"
@@ -257,12 +257,11 @@ export default function DevRlsCheckPage() {
                 onClick={() => void runUnsafeInsertTest()}
                 disabled={running !== null}
               >
-                FK/RLS insert �׽�Ʈ ����
+                {"FK/RLS insert \uD14C\uC2A4\uD2B8 \uC2E4\uD589"}
               </button>
             </div>
           </>
         )}
-
         <pre className="mt-4 overflow-auto rounded-xl border border-[#1E1E26] bg-[#0B0B0E] p-3 text-xs text-[#B8B8C3]">
           {JSON.stringify(logs, null, 2)}
         </pre>

@@ -27,7 +27,7 @@ export default function DashboardRoutePage() {
       } = await supabase.auth.getSession();
 
       if (sessionError) {
-        setError(`?�션 ?�인 ?�패: ${sessionError.message}`);
+        setError(`세션 확인 실패: ${sessionError.message}`);
         return;
       }
 
@@ -43,7 +43,7 @@ export default function DashboardRoutePage() {
         .maybeSingle<{ role: string | null }>();
 
       if (roleError) {
-        setError(`권한 ?�인 ?�패: ${roleError.message}`);
+        setError(`권한 확인 실패: ${roleError.message}`);
         return;
       }
 
@@ -62,7 +62,7 @@ export default function DashboardRoutePage() {
   return (
     <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] flex items-center justify-center p-6">
       <div className="w-full max-w-md rounded-2xl border border-[#1E1E26] bg-[#121218] p-6 text-center">
-        <h1 className="text-xl font-semibold">?�?�보?�로 ?�동 �?..</h1>
+        <h1 className="text-xl font-semibold">대시보드로 이동 중...</h1>
         {error && <p className="mt-3 text-sm text-[#FFB4B4]">{error}</p>}
       </div>
     </main>

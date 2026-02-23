@@ -6,48 +6,48 @@ import { supabase } from "@/lib/supabaseClient";
 
 export default function AuthCallbackPage() {
   const router = useRouter();
-  const [msg, setMsg] = useState("로그??처리 �?..");
+  const [msg, setMsg] = useState("로그인 처리 중...");
 
   useEffect(() => {
-    (async () => {
+    void (async () => {
       try {
-        setMsg("콜백 URL ?�인 �?..");
+        setMsg("콜백 URL 확인 중...");
 
-        // 1) 먼�? ?�재 ?�션???��? ?�나 ?�인
+        // 1) 먼저 현재 세션 존재 여부 확인
         const s1 = await supabase.auth.getSession();
         if (s1.data.session) {
-          setMsg("?�션 ?�인?? ?�로???�??�?..");
+          setMsg("세션 확인됨. 프로필 처리 중...");
           await upsertProfileAndGoHome(s1.data.session.user, setMsg, router);
           return;
         }
 
-        // 2) URL??code가 ?�으�??�션?�로 교환(PKCE ?�름)
+        // 2) URL의 code를 세션으로 교환(PKCE)
         const url = new URL(window.location.href);
         const code = url.searchParams.get("code");
 
         if (code) {
-          setMsg("로그??코드 교환 �?..");
+          setMsg("로그인 코드 교환 중...");
           const { data, error } = await supabase.auth.exchangeCodeForSession(code);
           if (error) throw error;
 
           if (!data.session) {
-            setMsg("코드 교환 ?�에???�션???�습?�다. ?�시 로그?�해주세??");
+            setMsg("코드 교환 후 세션이 없습니다. 다시 로그인해 주세요.");
             setTimeout(() => router.replace("/login"), 1200);
             return;
           }
 
-          setMsg("?�션 ?�성?? ?�로???�??�?..");
+          setMsg("세션 생성됨. 프로필 처리 중...");
           await upsertProfileAndGoHome(data.session.user, setMsg, router);
           return;
         }
 
-        // 3) code???�고 ?�션???�으�? 메일???�앱브라?��?/리다?�렉??문제??가?�성 ??
+        // 3) code도 세션도 없으면 메일 앱/브라우저 이동 이슈 가능
         setMsg(
-          "?�션/코드가 ?�습?�다. 메일???�앱브라?��? 문제?????�어?? 링크�?'브라?��??�서 ?�기'�??�시 ?�도?�주?�요."
+          "세션/코드가 없습니다. 메일 앱 이동 문제일 수 있어요. 링크를 브라우저에서 다시 열어 주세요."
         );
         setTimeout(() => router.replace("/login"), 1500);
-      } catch (e: any) {
-        setMsg("콜백 처리 ?�패: " + (e?.message ?? "unknown error"));
+      } catch (e: unknown) {
+        setMsg("콜백 처리 실패: " + (e instanceof Error ? e.message : "unknown error"));
       }
     })();
   }, [router]);
@@ -75,10 +75,10 @@ async function upsertProfileAndGoHome(
   );
 
   if (upsertError) {
-    setMsg("?�로???�???�패: " + upsertError.message);
+    setMsg("프로필 생성 실패: " + upsertError.message);
     return;
   }
 
-  setMsg("?�료! ?�으�??�동?�니??..");
+  setMsg("완료! 잠시 후 이동합니다...");
   router.replace("/");
 }

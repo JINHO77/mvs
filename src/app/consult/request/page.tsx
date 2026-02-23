@@ -3,6 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import {
+  buildTimeSlots as buildTimeSlotsShared,
+  isoToKstHm as isoToKstHmShared,
+  kstDateTimeToIso as kstDateTimeToIsoShared,
+  loadConfirmedSlots as loadConfirmedSlotsShared,
+  loadOwnerBlockedSlots as loadOwnerBlockedSlotsShared,
+} from "@/lib/consultSlots";
 import { supabase } from "@/lib/supabaseClient";
 
 type SchoolLevel = "elem" | "mid" | "high";
@@ -30,16 +37,7 @@ type MyStudent = {
 };
 
 function buildTimeSlots(): string[] {
-  const slots: string[] = [];
-  for (let hour = 10; hour < 14; hour += 1) {
-    slots.push(`${String(hour).padStart(2, "0")}:00`);
-    slots.push(`${String(hour).padStart(2, "0")}:30`);
-  }
-  for (let hour = 22; hour < 24; hour += 1) {
-    slots.push(`${String(hour).padStart(2, "0")}:00`);
-    slots.push(`${String(hour).padStart(2, "0")}:30`);
-  }
-  return slots;
+  return buildTimeSlotsShared();
 }
 
 function parseDateParts(date: string): { y: number; m: number; d: number } | null {
@@ -49,23 +47,11 @@ function parseDateParts(date: string): { y: number; m: number; d: number } | nul
 }
 
 function kstDateTimeToIso(date: string, hhmm: string): string | null {
-  const parts = parseDateParts(date);
-  if (!parts) return null;
-  const [hh, mm] = hhmm.split(":").map(Number);
-  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
-
-  const utcMs = Date.UTC(parts.y, parts.m - 1, parts.d, hh - 9, mm, 0, 0);
-  return new Date(utcMs).toISOString();
+  return kstDateTimeToIsoShared(date, hhmm);
 }
 
 function isoToKstHm(iso: string): string {
-  const d = new Date(iso);
-  return new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: "Asia/Seoul",
-  }).format(d);
+  return isoToKstHmShared(iso);
 }
 
 function nextDate(date: string): string {
@@ -88,12 +74,12 @@ function getDayMode(date: string): "weekday" | "sunday" | "closed" | "none" {
 }
 
 function getStatusLabel(status: RequestStatus): string {
-  if (status === "requested") return "���";
-  if (status === "confirmed") return "Ȯ��";
-  if (status === "cancelled") return "���";
-  if (status === "canceled") return "���";
-  if (status === "done") return "�Ϸ�";
-  return "���";
+  if (status === "requested") return "\uC694\uCCAD";
+  if (status === "confirmed") return "\uD655\uC815";
+  if (status === "cancelled") return "\uCDE8\uC18C";
+  if (status === "canceled") return "\uCDE8\uC18C";
+  if (status === "done") return "\uC644\uB8CC";
+  return "\uC54C \uC218 \uC5C6\uC74C";
 }
 
 function getStatusTone(status: RequestStatus): { cardClass: string; badgeClass: string } {
@@ -134,7 +120,7 @@ function getStatusTone(status: RequestStatus): { cardClass: string; badgeClass: 
 }
 
 function getTypeLabel(type: "phone" | "in_person"): string {
-  return type === "phone" ? "��ȭ" : "���";
+  return type === "phone" ? "\uC804\uD654" : "\uB300\uBA74";
 }
 
 export default function ConsultRequestPage() {
@@ -201,30 +187,30 @@ export default function ConsultRequestPage() {
     if (bannerRequest.status === "confirmed") {
       return {
         className: "border-[#2D5E41] bg-[#14261B] text-[#A6F4C5]",
-        message: "������ Ȯ���Ǿ����ϴ�",
+        message: "\uC0C1\uB2F4 \uC77C\uC815\uC774 \uD655\uC815\uB418\uC5C8\uC2B5\uB2C8\uB2E4",
       };
     }
     if (bannerRequest.status === "requested") {
       return {
         className: "border-[#3F3820] bg-[#1D170A] text-[#E7D7A0]",
-        message: "���� ��û�� �����Ǿ����ϴ�(���)",
+        message: "\uC0C1\uB2F4 \uC694\uCCAD\uC774 \uC811\uC218\uB418\uC5C8\uC2B5\uB2C8\uB2E4(\uB300\uAE30)",
       };
     }
     if (bannerRequest.status === "canceled") {
       return {
         className: "border-[#6A2B2B] bg-[#2A1414] text-[#FFB4B4]",
-        message: "������ ��ҵǾ����ϴ�",
+        message: "\uC0C1\uB2F4 \uC77C\uC815\uC774 \uCDE8\uC18C\uB418\uC5C8\uC2B5\uB2C8\uB2E4",
       };
     }
     if (bannerRequest.status === "done") {
       return {
         className: "border-[#2E3A4D] bg-[#151C26] text-[#B9D8FF]",
-        message: "����� �Ϸ�Ǿ����ϴ�",
+        message: "\uC0C1\uB2F4\uC774 \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4",
       };
     }
     return {
       className: "border-[#2A2A35] bg-[#14141A] text-[#B8B8C3]",
-      message: "��� ó���Ǿ����ϴ�",
+      message: "\uC0C1\uD0DC \uCC98\uB9AC\uB418\uC5C8\uC2B5\uB2C8\uB2E4",
     };
   }, [bannerRequest]);
 
@@ -375,64 +361,21 @@ export default function ConsultRequestPage() {
   };
 
   const loadConfirmedSlots = async (date: string): Promise<void> => {
-    if (!date) {
-      setConfirmedSlots(new Set());
-      return;
+    try {
+      const next = await loadConfirmedSlotsShared(supabase, date);
+      setConfirmedSlots(next);
+    } catch (e: unknown) {
+      setError(`\uD655\uC815 \uC2DC\uAC04 \uC870\uD68C \uC2E4\uD328: ${e instanceof Error ? e.message : String(e)}`);
     }
-
-    const startIso = kstDateTimeToIso(date, "00:00");
-    const endIso = kstDateTimeToIso(nextDate(date), "00:00");
-
-    if (!startIso || !endIso) {
-      setConfirmedSlots(new Set());
-      return;
-    }
-
-    const { data, error: confirmedError } = await supabase
-      .from("consultation_requests")
-      .select("requested_start_at")
-      .in("status", ["confirmed", "done"])
-      .gte("requested_start_at", startIso)
-      .lt("requested_start_at", endIso)
-      .returns<Array<{ requested_start_at: string }>>();
-
-    if (confirmedError) {
-      setError(`\uD655\uC815 \uC2DC\uAC04 \uC870\uD68C \uC2E4\uD328: ${confirmedError.message}`);
-      return;
-    }
-
-    const next = new Set((data ?? []).map((row) => isoToKstHm(row.requested_start_at)));
-    setConfirmedSlots(next);
   };
 
   const loadOwnerBlockedSlots = async (date: string): Promise<void> => {
-    if (!date) {
-      setOwnerBlockedSlots(new Set());
-      return;
+    try {
+      const next = await loadOwnerBlockedSlotsShared(supabase, date);
+      setOwnerBlockedSlots(next);
+    } catch (e: unknown) {
+      setError(`\uC6D0\uC7A5 \uCC28\uB2E8 \uC2DC\uAC04 \uC870\uD68C \uC2E4\uD328: ${e instanceof Error ? e.message : String(e)}`);
     }
-
-    const startIso = kstDateTimeToIso(date, "00:00");
-    const endIso = kstDateTimeToIso(nextDate(date), "00:00");
-
-    if (!startIso || !endIso) {
-      setOwnerBlockedSlots(new Set());
-      return;
-    }
-
-    const { data, error: blockedError } = await supabase
-      .from("consultation_blocked_slots")
-      .select("start_at,end_at")
-      .lt("start_at", endIso)
-      .gt("end_at", startIso)
-      .returns<Array<{ start_at: string; end_at: string }>>();
-
-    if (blockedError) {
-      setError(`��� �ð� ��ȸ ����: ${blockedError.message}`);
-      return;
-    }
-
-    const next = new Set((data ?? []).map((row) => isoToKstHm(row.start_at)));
-    setOwnerBlockedSlots(next);
   };
 
   const submit = async () => {
@@ -553,9 +496,9 @@ export default function ConsultRequestPage() {
         .eq("id", requestId);
       if (updateError) throw new Error(updateError.message);
       await loadMyRequests(guardianId);
-      setSuccess("��û�� ��ҵǾ����ϴ�.");
+      setSuccess("\uC694\uCCAD\uC774 \uCDE8\uC18C\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "��û ��� �� ������ �߻��߽��ϴ�.");
+      setError(e instanceof Error ? e.message : "\uC694\uCCAD \uCDE8\uC18C \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.");
     } finally {
       setCancelingRequestId(null);
     }
@@ -625,9 +568,9 @@ export default function ConsultRequestPage() {
                 onChange={(e) => setSelectedStudentId(e.target.value)}
               >
                 {myStudents.map((student) => {
-                  const school = student.school_level === "elem" ? "��" : student.school_level === "mid" ? "��" : student.school_level === "high" ? "��" : "���Է�";
-                  const gradeText = student.grade != null ? `${student.grade}�г�` : "���Է�";
-                  const nameText = student.name?.trim() || "�̸�����";
+                  const school = student.school_level === "elem" ? "\uCD08" : student.school_level === "mid" ? "\uC911" : student.school_level === "high" ? "\uACE0" : "\uBBF8\uC785\uB825";
+                  const gradeText = student.grade != null ? `${student.grade}\uD559\uB144` : "\uBBF8\uC785\uB825";
+                  const nameText = student.name?.trim() || "\uC774\uB984\uC5C6\uC74C";
                   const classText = student.class_label?.trim() ? ` (${student.class_label.trim()})` : "";
                   return (
                     <option key={student.student_id} value={student.student_id}>
@@ -776,7 +719,7 @@ export default function ConsultRequestPage() {
                       }`}
                     >
                       {slot}
-                      {!isConfirmed && isOwnerBlocked ? " ??" : ""}
+                      {!isConfirmed && isOwnerBlocked ? " (\uCC28\uB2E8)" : ""}
                     </button>
                   );
                 })}
@@ -842,7 +785,7 @@ export default function ConsultRequestPage() {
                     onClick={() => void cancelMyRequest(row.id)}
                     disabled={cancelDisabled}
                   >
-                    {cancelingRequestId === row.id ? "��� ó�� ��..." : "���"}
+                    {cancelingRequestId === row.id ? "\uCDE8\uC18C \uCC98\uB9AC \uC911..." : "\uCDE8\uC18C"}
                   </button>
                 </div>
               );
