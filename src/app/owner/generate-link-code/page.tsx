@@ -1,32 +1,105 @@
-﻿"use client";
+"use client";
 
+import QRCode from "react-qr-code";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import HomeLink from "@/components/common/HomeLink";
+import PageShell from "@/components/ui/PageShell";
+import SectionCard from "@/components/ui/SectionCard";
 import { supabase } from "@/lib/supabaseClient";
 
-type Student = { id: string; name: string | null; email: string | null };
+type Student = {
+  id: string;
+  name: string | null;
+  email: string | null;
+};
+
 type PageState = "loading" | "ready";
 
 type IssueResult =
   | { ok: true; code: string; expires_at: string }
   | { ok: false; reason?: string };
 
+type StoredCodeEntry = {
+  code: string;
+  expiresAt: string;
+};
+
+type QrModalState = {
+  studentId: string;
+  studentName: string;
+  code: string;
+  expiresAt: string;
+};
+
+const STORAGE_KEY = "latestStudentLinkCodes";
+
+function buildLinkUrl(code: string): string {
+  if (typeof window === "undefined") return `/link-student?code=${encodeURIComponent(code)}`;
+  return `${window.location.origin}/link-student?code=${encodeURIComponent(code)}`;
+}
+
+function formatExpiryDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "유효기간: 7일";
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}.${month}.${day}까지 사용 가능`;
+}
+
 export default function GenerateLinkCodePage() {
   const router = useRouter();
   const isDevMode = useMemo(() => process.env.NEXT_PUBLIC_DEV_MODE === "true", []);
-
+  const [preselectedStudentId, setPreselectedStudentId] = useState<string | null>(null);
   const [pageState, setPageState] = useState<PageState>("loading");
   const [pageError, setPageError] = useState<string | null>(null);
-
   const [students, setStudents] = useState<Student[]>([]);
   const [busyStudentId, setBusyStudentId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-
-  const [generatedCodes, setGeneratedCodes] = useState<Record<string, string>>({});
+  const [copiedStudentId, setCopiedStudentId] = useState<string | null>(null);
+  const [generatedCodes, setGeneratedCodes] = useState<Record<string, StoredCodeEntry>>({});
+  const [qrModal, setQrModal] = useState<QrModalState | null>(null);
 
   useEffect(() => {
     void initialize();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const studentId = new URLSearchParams(window.location.search).get("studentId");
+    setPreselectedStudentId(studentId);
+
+    try {
+      const saved = window.localStorage.getItem(STORAGE_KEY);
+      if (!saved) return;
+
+      const parsed = JSON.parse(saved) as Record<string, string | StoredCodeEntry>;
+      if (!parsed || typeof parsed !== "object") return;
+
+      const normalized = Object.fromEntries(
+        Object.entries(parsed).flatMap(([studentIdKey, value]) => {
+          if (typeof value === "string") {
+            return [[studentIdKey, { code: value, expiresAt: "" } satisfies StoredCodeEntry]];
+          }
+          if (!value || typeof value.code !== "string") return [];
+          return [
+            [
+              studentIdKey,
+              {
+                code: value.code,
+                expiresAt: typeof value.expiresAt === "string" ? value.expiresAt : "",
+              } satisfies StoredCodeEntry,
+            ],
+          ];
+        }),
+      );
+
+      setGeneratedCodes(normalized);
+    } catch {
+      // Ignore stale local storage values.
+    }
   }, []);
 
   const initialize = async () => {
@@ -34,7 +107,7 @@ export default function GenerateLinkCodePage() {
 
     const { data, error: sessionError } = await supabase.auth.getSession();
     if (sessionError) {
-      setPageError(`\uC138\uC158 \uD655\uC778 \uC2E4\uD328: ${sessionError.message}`);
+      setPageError(`세션 확인 실패: ${sessionError.message}`);
       setPageState("ready");
       return;
     }
@@ -52,26 +125,25 @@ export default function GenerateLinkCodePage() {
       .single<{ role: string }>();
 
     if (meError) {
-      setPageError(`\uAD8C\uD55C \uD655\uC778 \uC2E4\uD328: ${meError.message}`);
+      setPageError(`권한 확인 실패: ${meError.message}`);
       setPageState("ready");
       return;
     }
 
-    if (me?.role !== "owner" && me?.role !== "teacher") {
+    if (me.role !== "owner" && me.role !== "teacher") {
       router.replace("/");
       return;
     }
 
     const { data: studentRows, error: studentsError } = await supabase.rpc("list_students");
-
     if (studentsError) {
-      setPageError(`\uD559\uC0DD \uBAA9\uB85D \uC870\uD68C \uC2E4\uD328: ${studentsError.message}`);
+      setPageError(`학생 목록 조회 실패: ${studentsError.message}`);
       setPageState("ready");
       return;
     }
 
     if (!Array.isArray(studentRows)) {
-      setPageError("\uD559\uC0DD \uBAA9\uB85D \uC751\uB2F5 \uD615\uC2DD\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uBC30\uC5F4 \uB370\uC774\uD130\uAC00 \uD544\uC694\uD569\uB2C8\uB2E4.");
+      setPageError("학생 목록 응답 형식이 올바르지 않습니다.");
       setStudents([]);
       setPageState("ready");
       return;
@@ -79,6 +151,11 @@ export default function GenerateLinkCodePage() {
 
     setStudents(studentRows as Student[]);
     setPageState("ready");
+  };
+
+  const writeStoredCodes = (next: Record<string, StoredCodeEntry>) => {
+    setGeneratedCodes(next);
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   };
 
   const handleIssueCode = async (studentId: string) => {
@@ -91,85 +168,203 @@ export default function GenerateLinkCodePage() {
         p_days: 7,
       });
 
-      if (error) {
-        throw new Error(error.message);
+      if (error) throw new Error(error.message);
+
+      const result = data as IssueResult;
+      if (!result || result.ok !== true || !result.code) {
+        throw new Error("코드 발급 결과가 올바르지 않습니다.");
       }
 
-      const res = data as IssueResult;
-      if (!res || (res as any).ok !== true || !(res as any).code) {
-        throw new Error("\uCF54\uB4DC \uBC1C\uAE09 \uACB0\uACFC\uAC00 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.");
-      }
-
-      setGeneratedCodes((prev) => ({ ...prev, [studentId]: (res as any).code }));
+      writeStoredCodes({
+        ...generatedCodes,
+        [studentId]: {
+          code: result.code,
+          expiresAt: result.expires_at,
+        },
+      });
     } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : "\uCF54\uB4DC \uBC1C\uAE09 \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.");
+      setActionError(err instanceof Error ? err.message : "코드 발급 중 오류가 발생했습니다.");
     } finally {
       setBusyStudentId(null);
     }
   };
 
+  const copyCode = async (studentId: string) => {
+    const issued = generatedCodes[studentId];
+    if (!issued?.code) return;
+
+    try {
+      await navigator.clipboard.writeText(issued.code);
+      setCopiedStudentId(studentId);
+      window.setTimeout(() => {
+        setCopiedStudentId((prev) => (prev === studentId ? null : prev));
+      }, 1200);
+    } catch {
+      setActionError("코드 복사에 실패했습니다. 다시 시도해 주세요.");
+    }
+  };
+
+  const openQrModal = (student: Student) => {
+    const issued = generatedCodes[student.id];
+    if (!issued) return;
+
+    setQrModal({
+      studentId: student.id,
+      studentName: student.name?.trim() || "학생",
+      code: issued.code,
+      expiresAt: issued.expiresAt,
+    });
+  };
+
   if (pageState === "loading") {
-    return (
-      <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] flex items-center justify-center">
-        {"\uB85C\uB529 \uC911..."}
-      </main>
-    );
+    return <PageShell maxWidthClassName="max-w-4xl">로딩 중...</PageShell>;
   }
 
-  return (
-    <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6">
-      <div className="mx-auto w-full max-w-3xl rounded-2xl border border-[#1E1E26] bg-[#121218] p-6">
-        <h1 className="text-2xl font-semibold">
-          <span className="text-[#D4AF37]">MVS</span> {"\uD559\uC0DD \uB9C1\uD06C \uCF54\uB4DC \uBC1C\uAE09"}
-        </h1>
-        <p className="mt-2 text-sm text-[#B8B8C3]">{"\uC6D0\uC7A5/\uAD50\uC0AC \uACC4\uC815\uC5D0\uC11C \uD559\uC0DD\uC744 \uBCF4\uD638\uC790\uC640 \uC5F0\uACB0\uD560 \uC218 \uC788\uB294 \uCF54\uB4DC\uB97C \uBC1C\uAE09\uD569\uB2C8\uB2E4."}</p>
+  const orderedStudents = preselectedStudentId
+    ? [
+        ...students.filter((student) => student.id === preselectedStudentId),
+        ...students.filter((student) => student.id !== preselectedStudentId),
+      ]
+    : students;
 
+  return (
+    <PageShell
+      title="학생 연결 코드 발급"
+      subtitle="보호자에게 전달할 연결 코드와 QR을 바로 준비할 수 있어요."
+      maxWidthClassName="max-w-4xl"
+      rightSlot={<HomeLink fallbackHref="/owner" />}
+    >
+      <SectionCard className="mx-auto w-full max-w-4xl p-6">
         {pageError && (
-          <div className="mt-4 rounded-xl border border-[#6A2B2B] bg-[#2A1414] p-3 text-sm text-[#FFB4B4]">
+          <div className="rounded-xl border border-[var(--danger-text)] bg-[var(--danger-bg)] p-3 text-sm text-[var(--danger-text)]">
             {pageError}
           </div>
         )}
 
         {actionError && (
-          <div className="mt-4 rounded-xl border border-[#6A2B2B] bg-[#2A1414] p-3 text-sm text-[#FFB4B4]">
+          <div className="mt-4 rounded-xl border border-[var(--danger-text)] bg-[var(--danger-bg)] p-3 text-sm text-[var(--danger-text)]">
             {actionError}
           </div>
         )}
 
-        <div className="mt-6 space-y-3">
-          {students.length === 0 ? (
-            <div className="rounded-xl border border-[#1E1E26] bg-[#0B0B0E] p-4 text-sm text-[#B8B8C3]">
-              {"\uD559\uC0DD \uD504\uB85C\uD544(role=student)\uC774 \uC5C6\uC2B5\uB2C8\uB2E4."}
-            </div>
+        <div className="mt-2 grid grid-cols-1 gap-4">
+          {orderedStudents.length === 0 ? (
+            <SectionCard className="p-4 text-sm text-[var(--muted)] shadow-none">
+              학생 프로필이 없습니다.
+            </SectionCard>
           ) : (
-            students.map((student) => {
-              const isBusy = busyStudentId === student.id;
+            orderedStudents.map((student) => {
               const issuedCode = generatedCodes[student.id];
+              const isBusy = busyStudentId === student.id;
+              const isPreselected = preselectedStudentId === student.id;
 
               return (
-                <div
-                  key={student.id}
-                  className="rounded-xl border border-[#1E1E26] bg-[#0B0B0E] p-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
-                >
-                  <div className="min-w-0">
-                    <div className="font-medium text-[#F5F5F7]">{student.name || "\uC774\uB984 \uC5C6\uC74C"}</div>
-                    <div className="text-sm text-[#B8B8C3] truncate">{student.email || "\uC774\uBA54\uC77C \uC5C6\uC74C"}</div>
-                    {issuedCode && <div className="mt-2 text-sm text-[#D4AF37]">{"\uBC1C\uAE09 \uCF54\uB4DC"}: {issuedCode}</div>}
-                  </div>
+                <SectionCard key={student.id} className="overflow-hidden p-5 md:p-6">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="font-medium text-[var(--text)]">{student.name || "이름 없음"}</div>
+                        {isPreselected && (
+                          <span className="inline-flex items-center rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-2 py-0.5 text-xs text-[var(--accent)]">
+                            선택된 학생
+                          </span>
+                        )}
+                      </div>
+                      <div className="truncate text-sm text-[var(--muted)]">{student.email || "이메일 없음"}</div>
+                      <div className="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] px-4 py-3 text-sm text-[var(--text)]">
+                        {issuedCode ? (
+                          <>
+                            <div className="text-xs text-[var(--text-muted)]">연결 코드</div>
+                            <div className="mt-1 font-semibold tracking-[0.22em] text-[var(--text)]">{issuedCode.code}</div>
+                            <div className="mt-2 text-xs text-[var(--text-muted)]">{formatExpiryDate(issuedCode.expiresAt)}</div>
+                            <div className="mt-1 text-xs text-[var(--text-muted)]">발급일로부터 7일 동안 사용할 수 있어요.</div>
+                          </>
+                        ) : (
+                          <span className="text-[var(--text-muted)]">코드를 발급하면 보호자에게 복사하거나 QR로 바로 안내할 수 있어요.</span>
+                        )}
+                      </div>
+                    </div>
 
-                  <button
-                    className="rounded-xl bg-[#D4AF37] px-4 py-2 font-semibold text-black disabled:opacity-60"
-                    onClick={() => void handleIssueCode(student.id)}
-                    disabled={isBusy}
-                  >
-                    {isBusy ? "\uBC1C\uAE09 \uC911..." : "\uCF54\uB4DC \uBC1C\uAE09"}
-                  </button>
-                </div>
+                    <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-3 md:w-auto">
+                      <button
+                        type="button"
+                        className="rounded-xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[var(--bg)] disabled:opacity-60"
+                        onClick={() => void handleIssueCode(student.id)}
+                        disabled={isBusy}
+                      >
+                        {isBusy ? "발급 중..." : "코드 발급"}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text)] transition-colors hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => void copyCode(student.id)}
+                        disabled={!issuedCode}
+                      >
+                        {copiedStudentId === student.id ? "복사됨" : "복사"}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text)] transition-colors hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => openQrModal(student)}
+                        disabled={!issuedCode}
+                      >
+                        QR 보기
+                      </button>
+                    </div>
+                  </div>
+                </SectionCard>
               );
             })
           )}
         </div>
-      </div>
-    </main>
+      </SectionCard>
+
+      {qrModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(8,11,20,0.82)] p-4">
+          <div className="w-full max-w-md rounded-[30px] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)]">
+            <div className="text-center">
+              <h2 className="text-xl font-semibold text-[var(--text)]">보호자 연결 QR</h2>
+              <p className="mt-2 text-sm text-[var(--text-muted)]">보호자가 이 QR을 스캔하면 학생 연결 화면으로 이동해요.</p>
+            </div>
+
+            <div className="mt-6 rounded-[28px] border border-[var(--border)] bg-white p-5">
+              <div className="mx-auto w-full max-w-[280px]">
+                <QRCode
+                  value={buildLinkUrl(qrModal.code)}
+                  size={280}
+                  style={{ width: "100%", height: "auto" }}
+                  viewBox="0 0 256 256"
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] p-4 text-center">
+              <div className="text-sm font-medium text-[var(--text)]">{qrModal.studentName}</div>
+              <div className="mt-2 text-xs text-[var(--text-muted)]">연결 코드</div>
+              <div className="mt-1 font-semibold tracking-[0.22em] text-[var(--text)]">{qrModal.code}</div>
+              <div className="mt-3 text-xs text-[var(--text-muted)]">{formatExpiryDate(qrModal.expiresAt)}</div>
+              <div className="mt-1 text-xs text-[var(--text-muted)]">발급일로부터 7일 동안 사용할 수 있어요.</div>
+            </div>
+
+            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                className="rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[var(--bg)]"
+                onClick={() => void copyCode(qrModal.studentId)}
+              >
+                코드 복사
+              </button>
+              <button
+                type="button"
+                className="rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] px-4 py-3 text-sm font-medium text-[var(--text)]"
+                onClick={() => setQrModal(null)}
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </PageShell>
   );
 }

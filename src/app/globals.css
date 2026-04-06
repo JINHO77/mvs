@@ -1,17 +1,60 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #f6f7fb;
+  --font-geist-sans: "Segoe UI", Arial, Helvetica, sans-serif;
+  --font-geist-mono: "Cascadia Mono", Consolas, "Courier New", monospace;
+
+  /* 기본 색상 - 라이트모드 */
+  --bg: #fdf0f5;
   --card: #ffffff;
-  --card-muted: #eef0f6;
-  --text: #10131a;
-  --text-muted: #596074;
-  --border: #d9dde8;
-  --accent: #d4af37;
+  --card-soft: #FBEAF0;
+  --card-muted: var(--card-soft);
+  --text: #3a0a1e;
+  --text-muted: #993556;
+  --muted: var(--text-muted);
+  --border: #f0c4d8;
+  --accent: #D4537E;
+  --accent-soft: #FBEAF0;
+  --shadow: 0 10px 30px rgba(180, 40, 90, 0.07);
+  --radius: 18px;
+
+  /* 상태 색상 - 라이트모드 */
   --danger-bg: #fdecec;
   --danger-text: #8a2222;
-  --success-bg: #e8f7ee;
-  --success-text: #1f6a3f;
+  --success-bg: #E1F5EE;
+  --success-text: #085041;
+  --warning-bg: #FAEEDA;
+  --warning-text: #633806;
+  --warning-border: #EF9F27;
+
+  /* 주간 카드 배경 - 라이트모드 */
+  --card-done-border: #5DCAA5;
+  --card-done-bg: #E1F5EE;
+  --card-today-border: #D4537E;
+  --card-today-bg: #FBEAF0;
+  --card-today-shadow: 0 4px 20px rgba(212, 83, 126, 0.15);
+
+  /* 난이도 배지 - 라이트모드 */
+  --diff-easy-border: #5DCAA5;
+  --diff-easy-bg: rgba(93, 202, 165, 0.12);
+  --diff-easy-text: #085041;
+  --diff-normal-border: #85B7EB;
+  --diff-normal-bg: rgba(117, 191, 255, 0.12);
+  --diff-normal-text: #185FA5;
+  --diff-hard-border: #D4537E;
+  --diff-hard-bg: rgba(212, 83, 126, 0.1);
+  --diff-hard-text: #72243E;
+
+  /* 상태 배지 - 라이트모드 */
+  --status-done-border: #5DCAA5;
+  --status-done-bg: rgba(93, 202, 165, 0.15);
+  --status-done-text: #085041;
+  --status-today-border: #D4537E;
+  --status-today-bg: rgba(212, 83, 126, 0.1);
+  --status-today-text: #72243E;
+  --status-ready-border: #85B7EB;
+  --status-ready-bg: rgba(117, 191, 255, 0.1);
+  --status-ready-text: #185FA5;
 }
 
 @theme inline {
@@ -22,26 +65,152 @@
 }
 
 html.dark {
-  --bg: #0b0b0e;
-  --card: #121218;
-  --card-muted: #0f1015;
-  --text: #f5f5f7;
-  --text-muted: #b8b8c3;
-  --border: #1e1e26;
-  --accent: #d4af37;
+  /* 기본 색상 - 다크모드 */
+  --bg: #0b1220;
+  --card: #111827;
+  --card-soft: #0f172a;
+  --card-muted: var(--card-soft);
+  --text: #f1f5f9;
+  --text-muted: #94a3b8;
+  --muted: var(--text-muted);
+  --border: #1e293b;
+  --accent: rgba(250, 204, 21, 0.9);
+  --accent-soft: rgba(250, 204, 21, 0.12);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  --radius: 18px;
+
+  /* 상태 색상 - 다크모드 */
   --danger-bg: #2a1414;
   --danger-text: #ffb4b4;
   --success-bg: #14261b;
   --success-text: #a6f4c5;
+  --warning-bg: #2c2412;
+  --warning-text: #f3d98a;
+  --warning-border: #9b7a25;
+
+  /* 주간 카드 배경 - 다크모드 */
+  --card-done-border: rgba(122, 210, 164, 0.34);
+  --card-done-bg: linear-gradient(180deg, rgba(22, 63, 48, 0.96), rgba(15, 23, 42, 0.94));
+  --card-today-border: rgba(255, 214, 117, 0.52);
+  --card-today-bg: linear-gradient(180deg, rgba(73, 56, 18, 0.96), rgba(15, 23, 42, 0.94));
+  --card-today-shadow: 0 0 0 1px rgba(255, 214, 117, 0.08), 0 18px 44px rgba(0, 0, 0, 0.24);
+
+  /* 난이도 배지 - 다크모드 */
+  --diff-easy-border: rgba(122, 210, 164, 0.35);
+  --diff-easy-bg: rgba(122, 210, 164, 0.12);
+  --diff-easy-text: #A7E8C3;
+  --diff-normal-border: rgba(117, 191, 255, 0.35);
+  --diff-normal-bg: rgba(117, 191, 255, 0.12);
+  --diff-normal-text: #A9D8FF;
+  --diff-hard-border: rgba(255, 214, 117, 0.6);
+  --diff-hard-bg: rgba(255, 214, 117, 0.18);
+  --diff-hard-text: #FFE7A6;
+
+  /* 상태 배지 - 다크모드 */
+  --status-done-border: rgba(122, 210, 164, 0.32);
+  --status-done-bg: rgba(122, 210, 164, 0.12);
+  --status-done-text: #A7E8C3;
+  --status-today-border: rgba(255, 214, 117, 0.35);
+  --status-today-bg: rgba(255, 214, 117, 0.12);
+  --status-today-text: #FFE7A6;
+  --status-ready-border: rgba(117, 191, 255, 0.3);
+  --status-ready-bg: rgba(117, 191, 255, 0.12);
+  --status-ready-text: #A9D8FF;
 }
 
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), "Segoe UI", Arial, Helvetica, sans-serif;
+  line-height: 1.55;
+  text-rendering: optimizeLegibility;
 }
 
 .app-card {
   background: var(--card);
   border-color: var(--border);
+}
+
+html.dark .section-card {
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+}
+
+@keyframes splash-mark-enter {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.93);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.splash-mark-enter {
+  animation: splash-mark-enter 520ms ease-out;
+}
+
+@keyframes splash-mark-glow {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+    filter: blur(12px);
+  }
+  to {
+    opacity: 0.9;
+    transform: scale(1);
+    filter: blur(16px);
+  }
+}
+
+.splash-mark-glow {
+  background: radial-gradient(circle at center, rgba(250, 204, 21, 0.24) 0%, rgba(250, 204, 21, 0.08) 42%, rgba(250, 204, 21, 0) 74%);
+  animation: splash-mark-glow 560ms ease-out;
+}
+
+@keyframes splash-particle-flight {
+  0% {
+    opacity: 0;
+    transform: translate3d(var(--sx), var(--sy), 0) scale(0.78);
+  }
+  18% {
+    opacity: 0.68;
+  }
+  78% {
+    opacity: 0.62;
+    transform: translate3d(var(--ex), var(--ey), 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--ex), var(--ey), 0) scale(0.94);
+  }
+}
+
+.splash-particle {
+  position: absolute;
+  color: #f5d76e;
+  text-shadow: 0 0 10px rgba(245, 215, 110, 0.24);
+  filter: blur(0.2px);
+  will-change: transform, opacity;
+  animation-name: splash-particle-flight;
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+}
+
+@keyframes splash-shine-sweep {
+  from {
+    transform: translateX(0) skewX(-18deg);
+    opacity: 0;
+  }
+  24% {
+    opacity: 0.32;
+  }
+  to {
+    transform: translateX(160%) skewX(-18deg);
+    opacity: 0;
+  }
+}
+
+.splash-shine-sweep {
+  animation: splash-shine-sweep 520ms ease-out both;
 }

@@ -1,0 +1,16 @@
+﻿-- 20260304_01_backfill_student_academy_id.sql
+--
+-- 목적:
+-- /owner/reports 학생 드롭다운이 비는 원인(학생 academy_id 누락/불일치)을 운영에서 완화하기 위한 안내 마이그레이션.
+--
+-- 정책:
+-- 1) 특정 academy_id를 하드코딩해서 일괄 backfill 하지 않는다.
+-- 2) 학생 승인 시 owner의 academy_id를 자동 세팅하는 애플리케이션 로직으로 해결한다.
+--
+-- 참고 수동 점검 쿼리(실행 전 운영 정책 확인 필요):
+-- select id, name, email, academy_id, account_status
+-- from public.profiles
+-- where role = 'student' and academy_id is null
+-- order by created_at desc;
+--
+-- 필요 시 운영자가 케이스별로 academy_id를 수동 지정한다.

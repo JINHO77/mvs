@@ -1,227 +1,99 @@
-"use client";
+﻿"use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import PageShell from "@/components/ui/PageShell";
+import SectionCard from "@/components/ui/SectionCard";
 import { supabase } from "@/lib/supabaseClient";
+import { toPrettyErrorString } from "@/lib/supabaseError";
+import { isUuid } from "@/lib/validators";
 
-type PageState = "loading" | "ready";
-type SchoolLevel = "elem" | "mid" | "high";
+type StudentStatus = "active" | "pending" | "blocked" | "withdrawn";
+type StatusFilter = "all" | StudentStatus;
 
 type StudentRow = {
   id: string;
+  academy_id: string | null;
   email: string | null;
   name: string | null;
-  school_level: SchoolLevel | null;
+  school_level: string | null;
   grade: number | null;
   class_label: string | null;
   student_no: string | null;
+  account_status: StudentStatus | null;
+  created_at: string;
 };
 
-const schoolLevelLabel: Record<SchoolLevel, string> = {
-  elem: "\uCD08",
-  mid: "\uC911",
-  high: "\uACE0",
+type PendingStudentRow = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  school_level: string | null;
+  grade: number | null;
+  class_label: string | null;
+  created_at: string;
 };
 
-function getSchoolLevelLabel(level: SchoolLevel | null): string {
-  if (!level) return "\uBBF8\uC785\uB825";
-  return schoolLevelLabel[level];
+function levelLabel(level: string | null): string {
+  if (level === "elem") return "초";
+  if (level === "mid") return "중";
+  if (level === "high") return "고";
+  return "-";
 }
 
-function getGradeOptions(level: SchoolLevel | ""): number[] {
-  if (level === "elem") return [1, 2, 3, 4, 5, 6];
-  if (level === "mid" || level === "high") return [1, 2, 3];
-  return [];
+function formatDate(value: string): string {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString("ko-KR");
 }
 
-function buildSearchFields(row: StudentRow): string[] {
-  const rawSchoolLevel = row.school_level ?? "";
-  const schoolLevelKorean = getSchoolLevelLabel(row.school_level);
-  const gradeText = row.grade != null ? String(row.grade) : "";
-  const gradeWithLabel = row.grade != null ? `${row.grade}\uD559\uB144` : "";
-
-  return [
-    row.name ?? "",
-    row.email ?? "",
-    rawSchoolLevel,
-    schoolLevelKorean,
-    row.class_label ?? "",
-    row.student_no ?? "",
-    gradeText,
-    gradeWithLabel,
-  ];
+function statusBadgeClass(status: StudentStatus): string {
+  if (status === "pending") return "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]";
+  if (status === "blocked") return "border-[var(--danger-text)] bg-[var(--danger-bg)] text-[var(--danger-text)]";
+  if (status === "withdrawn") return "border-[var(--text-muted)] bg-[var(--card-soft)] text-[var(--text-muted)]";
+  return "border-[var(--success-text)] bg-[var(--success-bg)] text-[var(--success-text)]";
 }
 
-function formatStudentLabel(row: StudentRow): string {
-  const level = getSchoolLevelLabel(row.school_level);
-  const grade = row.grade != null ? `${row.grade}\uD559\uB144` : "";
-  const name = row.name?.trim() || "\uC774\uB984\uC5C6\uC74C";
-  const classText = row.class_label?.trim() ? ` (${row.class_label.trim()})` : "";
-
-  return [level, grade, name].filter(Boolean).join(" ") + classText;
+function statusLabel(status: StudentStatus): string {
+  if (status === "pending") return "승인대기";
+  if (status === "blocked") return "차단";
+  if (status === "withdrawn") return "탈퇴";
+  return "활성";
 }
 
 export default function OwnerStudentsPage() {
   const router = useRouter();
   const isDevMode = useMemo(() => process.env.NEXT_PUBLIC_DEV_MODE === "true", []);
 
-  const [pageState, setPageState] = useState<PageState>("loading");
-  const [pageError, setPageError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const [ownerAcademyId, setOwnerAcademyId] = useState<string | null>(null);
 
   const [students, setStudents] = useState<StudentRow[]>([]);
+  const [pendingStudents, setPendingStudents] = useState<PendingStudentRow[]>([]);
   const [keyword, setKeyword] = useState("");
-  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
-
-  const [name, setName] = useState("");
-  const [schoolLevel, setSchoolLevel] = useState<SchoolLevel | "">("");
-  const [grade, setGrade] = useState<number | "">("");
-  const [classLabel, setClassLabel] = useState("");
-  const [studentNo, setStudentNo] = useState("");
-
-  const [saving, setSaving] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
 
   useEffect(() => {
     void initialize();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const filteredStudents = useMemo(() => {
-    const q = keyword.trim().toLowerCase();
-    if (!q) return students;
-
-    return students.filter((row) => {
-      const fields = [
-        row.name ?? "",
-        row.email ?? "",
-        row.class_label ?? "",
-        row.student_no ?? "",
-        getSchoolLevelLabel(row.school_level),
-        row.school_level ?? "",
-        row.grade != null ? String(row.grade) : "",
-        row.grade != null ? `${row.grade}\uD559\uB144` : "",
-      ];
-      return fields.some((value) => value.toLowerCase().includes(q));
-    });
-  }, [keyword, students]);
-
-  useEffect(() => {
-    if (process.env.NODE_ENV === "production") return;
-
-    const trimmed = keyword.trim();
-    const sampleRow = students[0] ?? null;
-    const sampleFields = sampleRow ? buildSearchFields(sampleRow) : [];
-    const firstFiltered = filteredStudents[0] ?? null;
-
-    console.debug("[owner/students] search debug", {
-      keywordRaw: keyword,
-      keywordTrimmed: trimmed,
-      studentsLength: students.length,
-      filteredLength: filteredStudents.length,
-      firstFiltered: firstFiltered
-        ? {
-            name: firstFiltered.name,
-            email: firstFiltered.email,
-            school_level: firstFiltered.school_level,
-            grade: firstFiltered.grade,
-            class_label: firstFiltered.class_label,
-            student_no: firstFiltered.student_no,
-          }
-        : null,
-      sampleFields,
-    });
-  }, [keyword, students, filteredStudents]);
-
-  useEffect(() => {
-    if (!selectedStudentId) return;
-    const exists = students.some((row) => row.id === selectedStudentId);
-    if (!exists) {
-      clearSelectionForm();
-    }
-  }, [students, selectedStudentId]);
-
-  const selectedStudent = useMemo(
-    () => students.find((row) => row.id === selectedStudentId) ?? null,
-    [students, selectedStudentId]
-  );
-
-  const gradeOptions = useMemo(() => getGradeOptions(schoolLevel), [schoolLevel]);
-
-  const clearSelectionForm = () => {
-    setSelectedStudentId(null);
-    setName("");
-    setSchoolLevel("");
-    setGrade("");
-    setClassLabel("");
-    setStudentNo("");
-  };
-
-  const applyForm = (row: StudentRow) => {
-    setSelectedStudentId(row.id);
-    setName(row.name ?? "");
-    setSchoolLevel(row.school_level ?? "");
-    setGrade(typeof row.grade === "number" ? row.grade : "");
-    setClassLabel(row.class_label ?? "");
-    setStudentNo(row.student_no ?? "");
-    setActionError(null);
-    setActionSuccess(null);
-  };
-
-  const fetchStudents = async (): Promise<StudentRow[] | null> => {
-    const query = supabase
-      .from("profiles")
-      .select("id, email, name, school_level, grade, class_label, student_no")
-      .eq("role", "student");
-
-    const { data, error } = await query
-      .order("school_level", { ascending: true, nullsFirst: false })
-      .order("grade", { ascending: true, nullsFirst: false })
-      .order("name", { ascending: true, nullsFirst: false })
-      .order("email", { ascending: true })
-      .range(0, 499);
-
-    if (error) {
-      setPageError(`\uD559\uC0DD \uBAA9\uB85D \uC870\uD68C \uC2E4\uD328: ${error.message}`);
-      return null;
-    }
-
-    const rows = (data ?? []) as StudentRow[];
-    setStudents(rows);
-    return rows;
-  };
-
-  const refreshStudents = async () => {
-    const rows = await fetchStudents();
-    if (!rows) return;
-
-    if (rows.length === 0) {
-      clearSelectionForm();
-      return;
-    }
-
-    if (!selectedStudentId) return;
-
-    const selected = rows.find((row) => row.id === selectedStudentId);
-    if (selected) {
-      applyForm(selected);
-      return;
-    }
-
-    clearSelectionForm();
-  };
-
   const initialize = async () => {
-    setPageError(null);
-
-    const { data, error: sessionError } = await supabase.auth.getSession();
+    setError(null);
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
     if (sessionError) {
-      setPageError(`\uC138\uC158 \uD655\uC778 \uC2E4\uD328: ${sessionError.message}`);
-      setPageState("ready");
+      setError(toPrettyErrorString(sessionError));
+      setLoading(false);
       return;
     }
-
-    const session = data.session;
     if (!session) {
       router.replace(isDevMode ? "/dev-login" : "/login");
       return;
@@ -229,259 +101,324 @@ export default function OwnerStudentsPage() {
 
     const { data: me, error: meError } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role, account_status, academy_id")
       .eq("id", session.user.id)
-      .single<{ role: string }>();
-
+      .maybeSingle<{ role: string | null; account_status: string | null; academy_id: string | null }>();
     if (meError) {
-      setPageError(`\uAD8C\uD55C \uD655\uC778 \uC2E4\uD328: ${meError.message}`);
-      setPageState("ready");
+      setError(toPrettyErrorString(meError));
+      setLoading(false);
       return;
     }
-
-    if (me.role !== "owner" && me.role !== "teacher") {
+    if (me?.role !== "owner") {
       router.replace("/");
       return;
     }
-
-    const rows = await fetchStudents();
-    if (!rows) {
-      setPageState("ready");
+    if ((me?.account_status ?? "active") !== "active") {
+      router.replace("/login");
       return;
     }
 
-    if (rows.length > 0) {
-      applyForm(rows[0]);
-    }
+    setOwnerAcademyId(isUuid(me?.academy_id) ? me.academy_id : null);
 
-    setPageState("ready");
+    await refreshLists();
+    setLoading(false);
   };
 
-  const handleSchoolLevelChange = (value: SchoolLevel | "") => {
-    setSchoolLevel(value);
+  const refreshLists = async () => {
+    const [studentsRes, pendingRes] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("id,academy_id,email,name,school_level,grade,class_label,student_no,account_status,created_at")
+        .eq("role", "student")
+        .order("created_at", { ascending: false })
+        .returns<StudentRow[]>(),
+      supabase
+        .from("profiles")
+        .select("id,name,email,school_level,grade,class_label,created_at")
+        .eq("role", "student")
+        .eq("account_status", "pending")
+        .order("created_at", { ascending: false })
+        .returns<PendingStudentRow[]>(),
+    ]);
 
-    const nextOptions = getGradeOptions(value);
-    if (!nextOptions.includes(Number(grade))) {
-      setGrade("");
+    if (studentsRes.error) {
+      console.error("Owner students load failed:", toPrettyErrorString(studentsRes.error), studentsRes.error);
+      setError(toPrettyErrorString(studentsRes.error));
+      return;
+    }
+    if (pendingRes.error) {
+      console.error("Owner pending students load failed:", toPrettyErrorString(pendingRes.error), pendingRes.error);
+      setError(toPrettyErrorString(pendingRes.error));
+      return;
+    }
+
+    setStudents(Array.isArray(studentsRes.data) ? studentsRes.data : []);
+    setPendingStudents(Array.isArray(pendingRes.data) ? pendingRes.data : []);
+  };
+
+  const updateStatus = async (studentId: string, status: StudentStatus) => {
+    setError(null);
+    setSuccess(null);
+    setBusyId(studentId);
+    try {
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({ account_status: status })
+        .eq("id", studentId)
+        .eq("role", "student");
+      if (updateError) throw updateError;
+      await refreshLists();
+      setSuccess(`상태를 ${statusLabel(status)}로 변경했습니다.`);
+    } catch (e: unknown) {
+      console.error("Owner student status update failed:", toPrettyErrorString(e), e);
+      setError(toPrettyErrorString(e));
+    } finally {
+      setBusyId(null);
     }
   };
 
-  const handleSave = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setActionError(null);
-    setActionSuccess(null);
-
-    if (!selectedStudentId) {
-      setActionError("\uC218\uC815\uD560 \uD559\uC0DD\uC744 \uC120\uD0DD\uD574 \uC8FC\uC138\uC694.");
+  const linkStudentToAcademy = async (studentId: string) => {
+    if (!isUuid(ownerAcademyId)) {
+      setError("학원 소속 정보가 없습니다. 먼저 학원 설정을 완료해 주세요.");
       return;
     }
+    if (!window.confirm("선택한 학생을 현재 원장님의 학원 소속으로 연결할까요?")) return;
 
-    const trimmedName = name.trim();
-    const trimmedClassLabel = classLabel.trim();
-    const trimmedStudentNo = studentNo.trim();
+    setError(null);
+    setSuccess(null);
+    setBusyId(studentId);
+    try {
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({ academy_id: ownerAcademyId })
+        .eq("id", studentId)
+        .eq("role", "student")
+        .is("academy_id", null);
+      if (updateError) throw updateError;
 
-    if (!trimmedName) {
-      setActionError("\uC774\uB984\uC740 \uD544\uC218\uC785\uB2C8\uB2E4.");
-      return;
+      setStudents((prev) => prev.map((row) => (row.id === studentId ? { ...row, academy_id: ownerAcademyId } : row)));
+      setSuccess("학생 학원 소속을 연결했습니다.");
+    } catch (e: unknown) {
+      console.error("Owner student academy link failed:", toPrettyErrorString(e), e);
+      setError(toPrettyErrorString(e));
+    } finally {
+      setBusyId(null);
     }
-
-    const validGradeOptions = getGradeOptions(schoolLevel);
-    const normalizedGrade = validGradeOptions.includes(Number(grade)) ? Number(grade) : null;
-
-    setSaving(true);
-
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        name: trimmedName,
-        school_level: schoolLevel || null,
-        grade: normalizedGrade,
-        class_label: trimmedClassLabel || null,
-        student_no: trimmedStudentNo || null,
-      })
-      .eq("id", selectedStudentId);
-
-    if (error) {
-      setActionError(`\uC800\uC7A5 \uC2E4\uD328: ${error.message}`);
-      setSaving(false);
-      return;
-    }
-
-    await refreshStudents();
-
-    setActionSuccess("\uC800\uC7A5\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
-    setSaving(false);
   };
 
-  if (pageState === "loading") {
-    return (
-      <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] flex items-center justify-center">
-        {"\uB85C\uB529 \uC911..."}
-      </main>
-    );
+  const filteredStudents = useMemo(() => {
+    const q = keyword.trim().toLowerCase();
+    return students.filter((row) => {
+      const status = (row.account_status ?? "active") as StudentStatus;
+      if (statusFilter !== "all" && status !== statusFilter) return false;
+      if (!q) return true;
+      const haystack = [
+        row.name ?? "",
+        row.email ?? "",
+        row.school_level ?? "",
+        row.grade != null ? String(row.grade) : "",
+        row.class_label ?? "",
+        row.student_no ?? "",
+      ].join(" ").toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [students, statusFilter, keyword]);
+
+  if (loading) {
+    return <PageShell maxWidthClassName="max-w-6xl">로딩 중...</PageShell>;
   }
 
   return (
-    <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6">
-      <div className="mx-auto w-full max-w-6xl rounded-2xl border border-[#1E1E26] bg-[#121218] p-6">
-        <h1 className="text-2xl font-semibold">
-          <span className="text-[#D4AF37]">MVS</span> {"\uD559\uC0DD \uAD00\uB9AC"}
-        </h1>
-        <p className="mt-2 text-sm text-[#B8B8C3]">{"\uD559\uC0DD \uAE30\uBCF8 \uC815\uBCF4\uB97C \uAC80\uC0C9\uD558\uACE0 \uC218\uC815\uD569\uB2C8\uB2E4."}</p>
-
-        {pageError && (
-          <div className="mt-4 rounded-xl border border-[#6A2B2B] bg-[#2A1414] p-3 text-sm text-[#FFB4B4]">{pageError}</div>
+    <PageShell title="학생 관리" subtitle="승인대기 확인 및 학생 계정 상태를 관리합니다." maxWidthClassName="max-w-6xl">
+      <SectionCard>
+        {error && (
+          <div className="mb-4 rounded-xl border border-[var(--danger-text)] bg-[var(--danger-bg)] p-3 text-sm text-[var(--danger-text)]">
+            {error}
+          </div>
+        )}
+        {success && (
+          <div className="mb-4 rounded-xl border border-[var(--success-text)] bg-[var(--success-bg)] p-3 text-sm text-[var(--success-text)]">
+            {success}
+          </div>
         )}
 
-        <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-[360px_1fr]">
-          <section className="relative z-0 rounded-xl border border-[#1E1E26] bg-[#0B0B0E] p-4">
-            <label className="block text-sm text-[#D5D5DD]" htmlFor="student-search">
-              {"\uAC80\uC0C9"}
-            </label>
+        {!isUuid(ownerAcademyId) && (
+          <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] p-3 text-sm text-[var(--accent)]">
+            <div>학원 소속 정보가 없어 학생 연결을 진행할 수 없습니다.</div>
+            <Link href="/onboarding/academy" className="rounded-lg border border-[var(--accent)] px-2 py-1 text-xs font-semibold">
+              학원 설정으로 이동
+            </Link>
+          </div>
+        )}
+
+        <div className="mb-4 rounded-xl border border-[var(--border)] bg-[var(--card-soft)] p-4">
+          <div className="text-sm text-[var(--text-muted)]">승인대기</div>
+          <div className="mt-1 text-2xl font-semibold text-[var(--text)]">{pendingStudents.length}명</div>
+        </div>
+
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 md:p-5">
+          <h2 className="text-lg font-semibold text-[var(--text)]">승인 대기 목록</h2>
+          {pendingStudents.length === 0 ? (
+            <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--card-soft)] p-3 text-sm text-[var(--text-muted)]">
+              승인 대기 학생이 없습니다.
+            </div>
+          ) : (
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+              {pendingStudents.map((row) => (
+                <div key={row.id} className="rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] p-4">
+                  <div className="flex flex-col gap-1">
+                    <div className="text-sm font-semibold text-[var(--text)]">{row.name?.trim() || row.id.slice(0, 8)}</div>
+                    <div className="text-xs text-[var(--text-muted)]">{row.email ?? "-"}</div>
+                    <div className="text-xs text-[var(--text-muted)]">{`${levelLabel(row.school_level)} ${row.grade ?? "-"} / ${row.class_label?.trim() || "-"}`}</div>
+                    <div className="text-xs text-[var(--text-muted)]">가입: {formatDate(row.created_at)}</div>
+                  </div>
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      className="w-full rounded-lg border border-[var(--success-text)] bg-[var(--success-bg)] px-3 py-2 text-xs text-[var(--success-text)] disabled:opacity-60 sm:w-auto"
+                      onClick={() => void updateStatus(row.id, "active")}
+                      disabled={busyId === row.id}
+                    >
+                      승인
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full rounded-lg border border-[var(--danger-text)] bg-[var(--danger-bg)] px-3 py-2 text-xs text-[var(--danger-text)] disabled:opacity-60 sm:w-auto"
+                      onClick={() => void updateStatus(row.id, "blocked")}
+                      disabled={busyId === row.id}
+                    >
+                      차단
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 md:p-5">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             <input
-              id="student-search"
               type="text"
-              className="pointer-events-auto mt-2 w-full rounded-xl border border-[#2A2A35] bg-[#121218] px-3 py-2 text-sm text-[#F5F5F7] outline-none focus:border-[#D4AF37]"
+              className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
+              placeholder="이름/이메일/학년/반 검색"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
-              placeholder={"\uC774\uB984/\uC774\uBA54\uC77C/\uD559\uAD50\uAE09/\uD559\uB144/\uBC18/\uD559\uBC88"}
-              autoComplete="off"
             />
-            <p className="mt-2 text-xs text-[#8D8D98]">
-              {"\uD45C\uC2DC: "}
-              {filteredStudents.length}
-              {" / \uC804\uCCB4: "}
-              {students.length}
-            </p>
-            {process.env.NODE_ENV !== "production" && (
-              <div className="mt-1 text-xs text-[#6F6F7D]">
-                <div>keyword raw: &quot;{keyword}&quot;</div>
-                <div>keyword trimmed: &quot;{keyword.trim()}&quot;</div>
-                <div>students.length: {students.length}</div>
-                <div>filteredStudents.length: {filteredStudents.length}</div>
-                <div>selectedStudentId: {selectedStudentId ?? "(none)"}</div>
-              </div>
-            )}
+            <select
+              className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+            >
+              <option value="all">전체</option>
+              <option value="active">active</option>
+              <option value="pending">pending</option>
+              <option value="blocked">blocked</option>
+              <option value="withdrawn">withdrawn</option>
+            </select>
+          </div>
 
-            <div className="mt-3 max-h-[55vh] space-y-2 overflow-auto pr-1">
-              {filteredStudents.length === 0 ? (
-                <div className="rounded-xl border border-[#1E1E26] bg-[#121218] p-3 text-sm text-[#B8B8C3]">
-                  {"\uAC80\uC0C9 \uACB0\uACFC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4."}
-                </div>
-              ) : (
-                filteredStudents.map((row) => {
-                  const selected = row.id === selectedStudentId;
+          <div className="mt-2 text-xs text-[var(--text-muted)]">표시: {filteredStudents.length} / 전체: {students.length}</div>
 
-                  return (
-                    <button
-                      key={row.id}
-                      type="button"
-                      onClick={() => applyForm(row)}
-                      className={`w-full rounded-xl border p-3 text-left transition ${
-                        selected
-                          ? "border-[#D4AF37] bg-[#1A1A22]"
-                          : "border-[#1E1E26] bg-[#121218] hover:border-[#2D2D3A]"
-                      }`}
-                    >
-                      <div className="text-sm font-medium text-[#F5F5F7]">{formatStudentLabel(row)}</div>
-                      <div className="mt-1 text-xs text-[#B8B8C3]">{row.email || "\uC774\uBA54\uC77C \uC5C6\uC74C"}</div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </section>
-
-          <section className="rounded-xl border border-[#1E1E26] bg-[#0B0B0E] p-4">
-            {!selectedStudent ? (
-              <div className="rounded-xl border border-[#1E1E26] bg-[#121218] p-4 text-sm text-[#B8B8C3]">
-                {"\uD559\uC0DD\uC744 \uC120\uD0DD\uD574 \uC8FC\uC138\uC694."}
+          <div className="mt-3 space-y-2">
+            {filteredStudents.length === 0 ? (
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--card-soft)] p-3 text-sm text-[var(--text-muted)]">
+                조건에 맞는 학생이 없습니다.
               </div>
             ) : (
-              <form className="space-y-4" onSubmit={(e) => void handleSave(e)}>
-                <h2 className="text-lg font-semibold text-[#F5F5F7]">{"\uD559\uC0DD \uC815\uBCF4 \uC218\uC815"}</h2>
+              filteredStudents.map((row) => {
+                const status = (row.account_status ?? "active") as StudentStatus;
+                return (
+                  <div key={row.id} className="rounded-xl border border-[var(--border)] bg-[var(--card-soft)] p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="text-sm font-semibold text-[var(--text)]">{row.name?.trim() || row.id.slice(0, 8)}</div>
+                        <div className="text-xs text-[var(--text-muted)]">{row.email ?? "-"}</div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {row.academy_id ? (
+                          <span className="inline-flex rounded-full border border-[var(--success-text)] bg-[var(--success-bg)] px-2 py-0.5 text-xs text-[var(--success-text)]">
+                            소속 설정됨
+                          </span>
+                        ) : (
+                          <span className="inline-flex rounded-full border border-[var(--danger-text)] bg-[var(--danger-bg)] px-2 py-0.5 text-xs text-[var(--danger-text)]">
+                            소속 미설정
+                          </span>
+                        )}
+                        <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs ${statusBadgeClass(status)}`}>
+                          {statusLabel(status)}
+                        </span>
+                      </div>
+                    </div>
 
-                {actionError && (
-                  <div className="rounded-xl border border-[#6A2B2B] bg-[#2A1414] p-3 text-sm text-[#FFB4B4]">{actionError}</div>
-                )}
+                    <div className="mt-2 text-xs text-[var(--text-muted)]">
+                      {`${levelLabel(row.school_level)} ${row.grade ?? "-"}학년 ${row.class_label?.trim() || "-"}반`}
+                      {row.student_no?.trim() ? ` / 학번 ${row.student_no.trim()}` : ""}
+                    </div>
+                    <div className="mt-1 text-xs text-[var(--text-muted)]">가입: {formatDate(row.created_at)}</div>
 
-                {actionSuccess && (
-                  <div className="rounded-xl border border-[#2D5E41] bg-[#14261B] p-3 text-sm text-[#A6F4C5]">{actionSuccess}</div>
-                )}
-
-                <label className="block space-y-2">
-                  <span className="text-sm text-[#D5D5DD]">{"\uC774\uB984 *"}</span>
-                  <input
-                    className="w-full rounded-xl border border-[#2A2A35] bg-[#121218] px-3 py-2 text-[#F5F5F7] outline-none focus:border-[#D4AF37]"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                  />
-                </label>
-
-                <label className="block space-y-2">
-                  <span className="text-sm text-[#D5D5DD]">{"\uD559\uAD50\uAE09"}</span>
-                  <select
-                    className="w-full rounded-xl border border-[#2A2A35] bg-[#121218] px-3 py-2 text-[#F5F5F7] outline-none focus:border-[#D4AF37]"
-                    value={schoolLevel}
-                    onChange={(e) => handleSchoolLevelChange((e.target.value as SchoolLevel) || "")}
-                  >
-                    <option value="">{"\uC120\uD0DD \uC548 \uD568"}</option>
-                    <option value="elem">{"\uCD08"}</option>
-                    <option value="mid">{"\uC911"}</option>
-                    <option value="high">{"\uACE0"}</option>
-                  </select>
-                </label>
-
-                <label className="block space-y-2">
-                  <span className="text-sm text-[#D5D5DD]">{"\uD559\uB144"}</span>
-                  <select
-                    className="w-full rounded-xl border border-[#2A2A35] bg-[#121218] px-3 py-2 text-[#F5F5F7] outline-none focus:border-[#D4AF37] disabled:opacity-60"
-                    value={grade}
-                    onChange={(e) => setGrade(e.target.value ? Number(e.target.value) : "")}
-                    disabled={!schoolLevel}
-                  >
-                    <option value="">{"\uC120\uD0DD \uC548 \uD568"}</option>
-                    {gradeOptions.map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="block space-y-2">
-                  <span className="text-sm text-[#D5D5DD]">{"\uBC18 (\uC120\uD0DD)"}</span>
-                  <input
-                    className="w-full rounded-xl border border-[#2A2A35] bg-[#121218] px-3 py-2 text-[#F5F5F7] outline-none focus:border-[#D4AF37]"
-                    value={classLabel}
-                    onChange={(e) => setClassLabel(e.target.value)}
-                    placeholder={"\uC608: A\uBC18"}
-                  />
-                </label>
-
-                <label className="block space-y-2">
-                  <span className="text-sm text-[#D5D5DD]">{"\uD559\uBC88 (\uC120\uD0DD)"}</span>
-                  <input
-                    className="w-full rounded-xl border border-[#2A2A35] bg-[#121218] px-3 py-2 text-[#F5F5F7] outline-none focus:border-[#D4AF37]"
-                    value={studentNo}
-                    onChange={(e) => setStudentNo(e.target.value)}
-                    placeholder={"\uD559\uC0DD \uBC88\uD638"}
-                  />
-                </label>
-
-                <button
-                  type="submit"
-                  className="w-full rounded-xl bg-[#D4AF37] px-4 py-2 font-semibold text-black disabled:opacity-60"
-                  disabled={saving}
-                >
-                  {saving ? "\uC800\uC7A5 \uC911..." : "\uC800\uC7A5"}
-                </button>
-              </form>
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                      {!row.academy_id && (
+                        <button
+                          type="button"
+                          className="w-full rounded-lg border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-xs text-[var(--accent)] disabled:opacity-60 sm:w-auto"
+                          onClick={() => void linkStudentToAcademy(row.id)}
+                          disabled={busyId === row.id || !isUuid(ownerAcademyId)}
+                        >
+                          {busyId === row.id ? "처리 중..." : "학원 소속 연결"}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="w-full rounded-lg border border-[var(--success-text)] bg-[var(--success-bg)] px-3 py-2 text-xs text-[var(--success-text)] disabled:opacity-60 sm:w-auto"
+                        onClick={() => void updateStatus(row.id, "active")}
+                        disabled={busyId === row.id}
+                      >
+                        승인
+                      </button>
+                      <button
+                        type="button"
+                        className="w-full rounded-lg border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-xs text-[var(--accent)] disabled:opacity-60 sm:w-auto"
+                        onClick={() => void updateStatus(row.id, "pending")}
+                        disabled={busyId === row.id}
+                      >
+                        대기
+                      </button>
+                      <button
+                        type="button"
+                        className="w-full rounded-lg border border-[var(--danger-text)] bg-[var(--danger-bg)] px-3 py-2 text-xs text-[var(--danger-text)] disabled:opacity-60 sm:w-auto"
+                        onClick={() => void updateStatus(row.id, "blocked")}
+                        disabled={busyId === row.id}
+                      >
+                        차단
+                      </button>
+                      {status !== "withdrawn" ? (
+                        <button
+                          type="button"
+                          className="w-full rounded-lg border border-[var(--text-muted)] bg-[var(--card)] px-3 py-2 text-xs text-[var(--text-muted)] disabled:opacity-60 sm:w-auto"
+                          onClick={() => void updateStatus(row.id, "withdrawn")}
+                          disabled={busyId === row.id}
+                        >
+                          탈퇴 처리
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="w-full rounded-lg border border-[var(--success-text)] bg-[var(--success-bg)] px-3 py-2 text-xs text-[var(--success-text)] disabled:opacity-60 sm:w-auto"
+                          onClick={() => void updateStatus(row.id, "active")}
+                          disabled={busyId === row.id}
+                        >
+                          복구
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
             )}
-          </section>
+          </div>
         </div>
-      </div>
-    </main>
+      </SectionCard>
+    </PageShell>
   );
 }

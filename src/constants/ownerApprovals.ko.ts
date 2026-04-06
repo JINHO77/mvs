@@ -1,0 +1,17 @@
+export const OWNER_APPROVALS_TEXT = {
+  homeCardTitle: "가입 승인 대기",
+  homeCardDescription: "승인 대기 학생을 확인하고 계정 상태를 처리합니다.",
+  homeCardAction: "가입 승인 관리",
+  pageTitle: "가입 승인 관리",
+  pageSubtitle: "승인 대기 학생을 승인 또는 차단 처리합니다.",
+  searchPlaceholder: "이름/이메일 검색",
+  empty: "승인 대기 학생이 없습니다.",
+  approve: "승인",
+  block: "차단",
+  processing: "처리 중...",
+  successApprove: "학생 계정을 승인했습니다.",
+  successBlock: "학생 계정을 차단했습니다.",
+  missingStatusColumnTitle: "승인 상태 컬럼(account_status) 미설정",
+  missingStatusColumnHelp: "Supabase SQL Editor에서 account_status 컬럼/제약 SQL을 먼저 적용해 주세요.",
+  missingStatusColumnLinkText: "SQL 마이그레이션 적용 가이드 확인",
+} as const;

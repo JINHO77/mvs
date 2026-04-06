@@ -1,0 +1,27 @@
+﻿export const TEXT = {
+  common: {
+    light: "Light",
+    dark: "Dark",
+    empty: "비어있음",
+  },
+  ownerCalendar: {
+    label: "MVS PLATFORM",
+    title: "MVS 상담 캘린더",
+    subtitle: "승인 대기부터 확정/차단까지 한 화면에서 관리합니다.",
+    selectedDate: "선택한 날짜",
+    hours: "운영 시간",
+    inboxTitle: "승인대기 요청 목록(인박스)",
+    inboxDesc: "선택 날짜의 대기 요청을 상단에서 바로 처리합니다.",
+    inboxEmpty: "승인대기 요청이 없습니다.",
+    kpiPending: "승인 대기",
+    kpiConfirmed: "예약 확정",
+    kpiBlocked: "예약 불가",
+    actionApprove: "확정",
+    actionCancel: "요청 취소",
+    actionBlock: "이 시간 차단",
+    actionUnblock: "차단 해제",
+    statusRequested: "승인 대기",
+    statusConfirmed: "예약 확정",
+    statusBlocked: "예약 불가",
+  },
+};

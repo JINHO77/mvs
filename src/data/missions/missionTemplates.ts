@@ -1,0 +1,111 @@
+﻿import type { MissionTemplateSeed } from "./types";
+
+const STEP_SCHEMA = {
+  type: "array",
+  items: {
+    type: "object",
+    required: ["stepOrder", "title", "stepType"],
+    properties: {
+      stepOrder: { type: "number" },
+      title: { type: "string" },
+      stepType: { type: "string", enum: ["concept", "input", "choice"] },
+      question: { type: "string" },
+      inputPlaceholder: { type: "string" },
+      answerType: { type: "string", enum: ["number", "text", "equation"] },
+      correctAnswer: { type: "string" },
+      acceptedAnswers: { type: "array", items: { type: "string" } },
+      acceptedUnits: { type: "array", items: { type: "string" } },
+      choices: { type: "array", items: { type: "string" } },
+      hint: { type: "string" },
+      hintLevel1: { type: "string" },
+      hintLevel2: { type: "string" },
+      hints: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            level: { type: "number" },
+            text: { type: "string" },
+          },
+        },
+      },
+      solution: {
+        type: "object",
+        properties: {
+          summary: { type: "string" },
+          steps: { type: "array", items: { type: "string" } },
+          concept: { type: "string" },
+        },
+      },
+      explanation: { type: "string" },
+      conceptTitle: { type: "string" },
+      conceptDescription: { type: "string" },
+    },
+  },
+};
+
+export const MISSION_TEMPLATES_SEED: MissionTemplateSeed[] = [
+  {
+    template_key: "distribution",
+    subject: "math",
+    source_type: "manual",
+    title: "분배와 비율 계산",
+    prompt_template: "수량을 조건에 맞게 분배하고 비율을 계산하는 미션 생성",
+    output_schema: { mission: "distribution", steps: STEP_SCHEMA },
+    is_active: true,
+  },
+  {
+    template_key: "price_equation",
+    subject: "math",
+    source_type: "manual",
+    title: "가격 방정식",
+    prompt_template: "가격과 수량 관계를 식으로 세우고 값을 구하는 미션 생성",
+    output_schema: { mission: "price_equation", steps: STEP_SCHEMA },
+    is_active: true,
+  },
+  {
+    template_key: "comparison_choice",
+    subject: "math",
+    source_type: "manual",
+    title: "비교 후 선택",
+    prompt_template: "두 가지 이상 선택지를 계산 비교해 최적 선택을 찾는 미션 생성",
+    output_schema: { mission: "comparison_choice", steps: STEP_SCHEMA },
+    is_active: true,
+  },
+  {
+    template_key: "graph_interpretation",
+    subject: "math",
+    source_type: "manual",
+    title: "그래프 해석",
+    prompt_template: "그래프의 기울기, 변화량, 구간 의미를 해석하는 미션 생성",
+    output_schema: { mission: "graph_interpretation", steps: STEP_SCHEMA },
+    is_active: true,
+  },
+  {
+    template_key: "pattern_discovery",
+    subject: "math",
+    source_type: "manual",
+    title: "패턴 발견",
+    prompt_template: "수열/도형 패턴을 관찰해 규칙을 찾고 예측하는 미션 생성",
+    output_schema: { mission: "pattern_discovery", steps: STEP_SCHEMA },
+    is_active: true,
+  },
+  {
+    template_key: "optimization",
+    subject: "math",
+    source_type: "manual",
+    title: "최적화 문제",
+    prompt_template: "제한 조건 안에서 최대/최소 값을 찾는 미션 생성",
+    output_schema: { mission: "optimization", steps: STEP_SCHEMA },
+    is_active: true,
+  },
+  {
+    template_key: "geometry_measurement",
+    subject: "math",
+    source_type: "manual",
+    title: "도형 측정",
+    prompt_template: "길이, 넓이, 부피를 실제 상황과 연결해 계산하는 미션 생성",
+    output_schema: { mission: "geometry_measurement", steps: STEP_SCHEMA },
+    is_active: true,
+  },
+];

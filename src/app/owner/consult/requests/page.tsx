@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Badge from "@/components/ui/Badge";
+import HomeLink from "@/components/common/HomeLink";
+import PageShell from "@/components/ui/PageShell";
+import SectionCard from "@/components/ui/SectionCard";
 import { supabase } from "@/lib/supabaseClient";
+import { toPrettyErrorString } from "@/lib/supabaseError";
 
 type ConsultationRequest = {
   id: string;
@@ -40,14 +45,14 @@ function parseDateParts(date: string): { y: number; m: number; d: number } | nul
 }
 
 function kstYmdFromIso(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
   return new Intl.DateTimeFormat("en-CA", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
     timeZone: "Asia/Seoul",
-  }).format(d);
+  }).format(date);
 }
 
 function kstTodayYmd(): string {
@@ -62,18 +67,36 @@ function kstTodayYmd(): string {
 function addDaysYmd(baseYmd: string, days: number): string {
   const parts = parseDateParts(baseYmd);
   if (!parts) return baseYmd;
-  const dt = new Date(Date.UTC(parts.y, parts.m - 1, parts.d + days));
-  const yy = dt.getUTCFullYear();
-  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(dt.getUTCDate()).padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
+  const date = new Date(Date.UTC(parts.y, parts.m - 1, parts.d + days));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
 }
 
 function getManualSchoolLevelLabel(level: string | null): string {
-  if (level === "elem") return "\uCD08";
-  if (level === "mid") return "\uC911";
-  if (level === "high") return "\uACE0";
-  return "\uBBF8\uC785\uB825";
+  if (level === "elem") return "초등";
+  if (level === "mid") return "중등";
+  if (level === "high") return "고등";
+  return "미입력";
+}
+
+function fmt(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleString("ko-KR");
+}
+
+function statusBadgeVariant(status: ConsultationRequest["status"]) {
+  if (status === "requested") return "warning" as const;
+  if (status === "confirmed" || status === "done") return "success" as const;
+  if (status === "canceled") return "danger" as const;
+  return "neutral" as const;
+}
+
+function statusLabel(status: ConsultationRequest["status"]) {
+  if (status === "requested") return "요청";
+  if (status === "confirmed") return "확정";
+  if (status === "canceled") return "취소";
+  if (status === "done") return "완료";
+  return "노쇼";
 }
 
 export default function OwnerConsultRequestsPage() {
@@ -83,6 +106,7 @@ export default function OwnerConsultRequestsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [showInboxLink, setShowInboxLink] = useState(false);
   const [requests, setRequests] = useState<ConsultationRequest[]>([]);
   const [profileMap, setProfileMap] = useState<Record<string, ProfileBasic>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -93,6 +117,7 @@ export default function OwnerConsultRequestsPage() {
   const [dateFilter, setDateFilter] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const didApplyFocusFilterReset = useRef(false);
+
   const requestedCount = useMemo(
     () => requests.filter((row) => row.status === "requested").length,
     [requests]
@@ -117,8 +142,7 @@ export default function OwnerConsultRequestsPage() {
   }, []);
 
   useEffect(() => {
-    if (didApplyFocusFilterReset.current) return;
-    if (!focusId) return;
+    if (didApplyFocusFilterReset.current || !focusId) return;
     if (!requests.some((row) => row.id === focusId)) return;
     setStatusFilter("all");
     setDateFilter("");
@@ -126,8 +150,7 @@ export default function OwnerConsultRequestsPage() {
   }, [focusId, requests]);
 
   useEffect(() => {
-    if (!focusId) return;
-    if (!requests.some((row) => row.id === focusId)) return;
+    if (!focusId || !requests.some((row) => row.id === focusId)) return;
 
     let timer: number | undefined;
     const rafId = window.requestAnimationFrame(() => {
@@ -144,6 +167,15 @@ export default function OwnerConsultRequestsPage() {
     };
   }, [focusId, requests]);
 
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void loadRequests();
+    }, 30000);
+    return () => window.clearInterval(intervalId);
+  }, [autoRefresh]);
+
   const initialize = async () => {
     setError(null);
 
@@ -153,7 +185,7 @@ export default function OwnerConsultRequestsPage() {
     } = await supabase.auth.getSession();
 
     if (sessionError) {
-      setError(`\uC138\uC158 \uD655\uC778 \uC2E4\uD328: ${sessionError.message}`);
+      setError("상담 요청 목록을 불러오지 못했습니다.");
       setLoading(false);
       return;
     }
@@ -163,21 +195,19 @@ export default function OwnerConsultRequestsPage() {
       return;
     }
 
-    const uid = session.user.id;
-
     const { data: me, error: roleError } = await supabase
       .from("profiles")
       .select("role")
-      .eq("id", uid)
+      .eq("id", session.user.id)
       .single<{ role: string }>();
 
     if (roleError) {
-      setError(`\uAD8C\uD55C \uD655\uC778 \uC2E4\uD328: ${roleError.message}`);
+      setError("권한을 확인하지 못했습니다.");
       setLoading(false);
       return;
     }
 
-    if (!me || (me.role !== "owner" && me.role !== "teacher")) {
+    if (me.role !== "owner" && me.role !== "teacher") {
       router.replace("/");
       return;
     }
@@ -189,15 +219,14 @@ export default function OwnerConsultRequestsPage() {
   const loadRequests = async () => {
     const { data, error: reqError } = await supabase
       .from("consultation_requests")
-      .select(
-        "id,student_id,guardian_id,requested_start_at,duration_min,type,status,notes,entry_mode,manual_student_name,manual_school_level,manual_grade,manual_class_label,manual_student_no,manual_guardian_contact,manual_consultation_content,owner_note,created_at"
-      )
+      .select("id,student_id,guardian_id,requested_start_at,duration_min,type,status,notes,entry_mode,manual_student_name,manual_school_level,manual_grade,manual_class_label,manual_student_no,manual_guardian_contact,manual_consultation_content,owner_note,created_at")
       .order("created_at", { ascending: false })
       .limit(50)
       .returns<ConsultationRequest[]>();
 
     if (reqError) {
-      setError(`\uC694\uCCAD \uBAA9\uB85D \uC870\uD68C \uC2E4\uD328: ${reqError.message}`);
+      console.error("Consultation request load failed:", toPrettyErrorString(reqError), reqError);
+      setError("상담 요청 목록을 불러오지 못했습니다.");
       return;
     }
 
@@ -210,14 +239,7 @@ export default function OwnerConsultRequestsPage() {
       }, {})
     );
 
-    const ids = Array.from(
-      new Set(
-        rows.flatMap((r) => {
-          return [r.guardian_id, r.student_id];
-        })
-      )
-    );
-
+    const ids = Array.from(new Set(rows.flatMap((row) => [row.guardian_id, row.student_id])));
     if (ids.length === 0) {
       setProfileMap({});
       return;
@@ -230,26 +252,18 @@ export default function OwnerConsultRequestsPage() {
       .returns<ProfileBasic[]>();
 
     if (profilesError) {
-      setError(`\uD504\uB85C\uD544 \uC870\uD68C \uC2E4\uD328: ${profilesError.message}`);
+      console.error("Consultation profile load failed:", toPrettyErrorString(profilesError), profilesError);
+      setError("상담 대상 정보를 불러오지 못했습니다.");
       return;
     }
 
-    const map = (profiles ?? []).reduce<Record<string, ProfileBasic>>((acc, p) => {
-      acc[p.id] = p;
-      return acc;
-    }, {});
-
-    setProfileMap(map);
+    setProfileMap(
+      (profiles ?? []).reduce<Record<string, ProfileBasic>>((acc, profile) => {
+        acc[profile.id] = profile;
+        return acc;
+      }, {})
+    );
   };
-
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const intervalId = window.setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      void loadRequests();
-    }, 30000);
-    return () => window.clearInterval(intervalId);
-  }, [autoRefresh, loadRequests]);
 
   const applyStatus = async (
     row: ConsultationRequest,
@@ -265,26 +279,20 @@ export default function OwnerConsultRequestsPage() {
       .from("consultation_requests")
       .update({
         status: nextStatus,
-        owner_note: nextOwnerNote ? nextOwnerNote : null,
+        owner_note: nextOwnerNote || null,
       })
       .eq("id", row.id);
 
     if (updateError) {
-      const msg = updateError.message ?? "";
-      const details = updateError.details ?? "";
-      const hint = updateError.hint ?? "";
-      const combined = `${msg} ${details} ${hint}`.toLowerCase();
+      console.error("Consultation status update failed:", toPrettyErrorString(updateError), updateError);
+      const combined = `${updateError.message ?? ""} ${updateError.details ?? ""} ${updateError.hint ?? ""}`.toLowerCase();
       const isConfirmConflict =
-        nextStatus === "confirmed" &&
-        (combined.includes("consultation_requests_confirmed_unique_start") ||
-          combined.includes("duplicate key") ||
-          combined.includes("already exists") ||
-          combined.includes("unique") ||
-          updateError.code === "23505");
+        nextStatus === "confirmed"
+        && (combined.includes("unique") || combined.includes("duplicate key") || updateError.code === "23505");
       setError(
         isConfirmConflict
-          ? "\uC774\uBBF8 \uD574\uB2F9 \uC2DC\uAC04\uC5D0 \uB2E4\uB978 \uC694\uCCAD\uC774 \uD655\uC815\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uC0C8\uB85C\uACE0\uCE68 \uD6C4 \uD655\uC778\uD574 \uC8FC\uC138\uC694."
-          : msg
+          ? "같은 시간에 이미 확정된 상담이 있습니다. 새로고침 후 다시 확인해 주세요."
+          : "상담 상태를 변경하지 못했습니다."
       );
       setActionBusyKey(null);
       return;
@@ -292,7 +300,7 @@ export default function OwnerConsultRequestsPage() {
 
     await loadRequests();
     setActionBusyKey(null);
-    setSuccess("\uC0C1\uD0DC\uAC00 \uBCC0\uACBD\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
+    setSuccess("상담 상태를 변경했습니다.");
     setEditingId(null);
   };
 
@@ -301,133 +309,196 @@ export default function OwnerConsultRequestsPage() {
     setSuccess(null);
     setActionBusyKey(`note:${row.id}`);
 
-    const nextOwnerNote = (ownerNotes[row.id] ?? "").trim();
     const { error: updateError } = await supabase
       .from("consultation_requests")
-      .update({
-        owner_note: nextOwnerNote ? nextOwnerNote : null,
-      })
+      .update({ owner_note: (ownerNotes[row.id] ?? "").trim() || null })
       .eq("id", row.id);
 
     if (updateError) {
-      setError(`\uBA54\uBAA8 \uC800\uC7A5 \uC2E4\uD328: ${updateError.message}`);
+      console.error("Consultation note save failed:", toPrettyErrorString(updateError), updateError);
+      setError("메모를 저장하지 못했습니다.");
       setActionBusyKey(null);
       return;
     }
 
     await loadRequests();
     setActionBusyKey(null);
-    setSuccess("\uBA54\uBAA8\uAC00 \uC800\uC7A5\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
+    setSuccess("메모를 저장했습니다.");
   };
 
-  const fmt = (iso: string) => {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleString();
+  const sendSummaryAnnouncement = async (row: ConsultationRequest) => {
+    setError(null);
+    setSuccess(null);
+    setShowInboxLink(false);
+    setActionBusyKey(`summary:${row.id}`);
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) throw userError;
+      if (!user) throw new Error("Missing user");
+
+      const defaultBody = [
+        `상담 일시: ${fmt(row.requested_start_at)}`,
+        "상담 요약:",
+        "- ",
+        "다음 안내:",
+        "- ",
+      ].join("\n");
+      const summaryBody = row.notes?.trim() || defaultBody;
+
+      const { data: inserted, error: insertError } = await supabase
+        .from("announcements")
+        .insert({
+          title: "상담 요약 안내",
+          body: summaryBody,
+          audience_role: "parent",
+          requires_ack: true,
+          created_by: user.id,
+        })
+        .select("id")
+        .single<{ id: string }>();
+
+      if (insertError) throw insertError;
+      if (!inserted?.id) throw new Error("Missing announcement id");
+
+      const { error: targetError } = await supabase.from("announcement_targets").insert({
+        announcement_id: inserted.id,
+        target_type: "student",
+        student_id: row.student_id,
+      });
+
+      if (targetError) throw targetError;
+
+      setSuccess("상담 요약 알림을 발송했습니다.");
+      setShowInboxLink(true);
+    } catch (e: unknown) {
+      console.error("Consultation summary announcement failed:", toPrettyErrorString(e), e);
+      setError("상담 요약 알림을 발송하지 못했습니다.");
+    } finally {
+      setActionBusyKey(null);
+    }
   };
 
   if (loading) {
-    return (
-      <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] flex items-center justify-center">
-        {"\uB85C\uB529 \uC911..."}
-      </main>
-    );
+    return <PageShell maxWidthClassName="max-w-5xl">로딩 중...</PageShell>;
   }
 
   return (
-    <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6">
-      <div className="mx-auto w-full max-w-5xl rounded-2xl border border-[#1E1E26] bg-[#121218] p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-semibold">
-            <span className="text-[#D4AF37]">MVS</span> {"\uC0C1\uB2F4 \uC694\uCCAD \uAD00\uB9AC"}
-            <span
-              className={`ml-3 inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${
-                requestedCount > 0
-                  ? "border-[#3F3820] bg-[#1D170A] text-[#E7D7A0]"
-                  : "border-[#2A2A35] bg-[#14141A] text-[#6F6F7D]"
-              }`}
-            >
-              {"\uC694\uCCAD"} {requestedCount}
-            </span>
-          </h1>
+    <PageShell
+      title="상담 요청 관리"
+      subtitle="최신 상담 요청을 상태별로 확인하고 모바일에서도 바로 처리할 수 있습니다."
+      maxWidthClassName="max-w-5xl"
+      actions={<HomeLink fallbackHref="/owner" />}
+    >
+      <SectionCard
+        header="요청 현황"
+        description="상태와 날짜로 빠르게 좁혀 보고, 각 요청 카드에서 승인·반려·완료 처리를 진행하세요."
+        rightSlot={(
           <button
             type="button"
-            className="rounded-xl border border-[#1E1E26] px-3 py-2 text-xs text-[#B8B8C3] hover:text-[#F5F5F7]"
+            className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text-muted)] md:w-auto"
             onClick={() => setAutoRefresh((prev) => !prev)}
           >
-            {"\uC790\uB3D9 \uAC31\uC2E0:"} {autoRefresh ? "\uCF1C\uC9D0" : "\uAEBC\uC9D0"}
+            자동 갱신: {autoRefresh ? "켜짐" : "꺼짐"}
           </button>
+        )}
+      >
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="inline-flex rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-1 text-xs text-[var(--accent)]">
+            요청 대기 {requestedCount}
+          </span>
+          <span className="inline-flex rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-3 py-1 text-xs text-[var(--text-muted)]">
+            표시 {filteredRequests.length} / 전체 {requests.length}
+          </span>
         </div>
 
         {error && (
-          <div className="mt-4 rounded-xl border border-[#6A2B2B] bg-[#2A1414] p-3 text-sm text-[#FFB4B4]">
+          <div className="mb-4 rounded-2xl border border-[var(--danger-text)] bg-[var(--danger-bg)] p-4 text-sm text-[var(--danger-text)]">
             {error}
           </div>
         )}
+
         {success && (
-          <div className="mt-4 rounded-xl border border-[#2D5E41] bg-[#14261B] p-3 text-sm text-[#A6F4C5]">
+          <div className="mb-4 rounded-2xl border border-[var(--success-text)] bg-[var(--success-bg)] p-4 text-sm text-[var(--success-text)]">
             {success}
+            {showInboxLink ? (
+              <>
+                {" "}
+                <a href="/announcements" className="underline underline-offset-2">
+                  알림함 보기
+                </a>
+              </>
+            ) : null}
           </div>
         )}
 
-        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_auto]">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <select
-            className="rounded-xl border border-[#1E1E26] bg-[#0B0B0E] px-3 py-2 text-sm text-[#B8B8C3] outline-none focus:ring-2 focus:ring-[#D4AF37]"
+            className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text)] outline-none focus:ring-2 focus:ring-[var(--accent)]"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
           >
-            <option value="all">{"\uC804\uCCB4"}</option>
-            <option value="requested">{"\uC694\uCCAD"}</option>
-            <option value="confirmed">{"\uD655\uC815"}</option>
-            <option value="canceled">{"\uCDE8\uC18C"}</option>
-            <option value="done">{"\uC644\uB8CC"}</option>
-            <option value="no_show">{"\uB178\uC1FC"}</option>
+            <option value="all">전체 상태</option>
+            <option value="requested">요청</option>
+            <option value="confirmed">확정</option>
+            <option value="canceled">취소</option>
+            <option value="done">완료</option>
+            <option value="no_show">노쇼</option>
           </select>
           <input
             type="date"
-            className="rounded-xl border border-[#1E1E26] bg-[#0B0B0E] px-3 py-2 text-sm text-[#B8B8C3] outline-none focus:ring-2 focus:ring-[#D4AF37]"
+            className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text)] outline-none focus:ring-2 focus:ring-[var(--accent)]"
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
           />
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="rounded-xl border border-[#1E1E26] px-3 py-2 text-sm text-[#B8B8C3] hover:text-[#F5F5F7]"
-              onClick={() => setDateFilter(kstTodayYmd())}
-            >
-              {"\uC624\uB298"}
-            </button>
-            <button
-              type="button"
-              className="rounded-xl border border-[#1E1E26] px-3 py-2 text-sm text-[#B8B8C3] hover:text-[#F5F5F7]"
-              onClick={() => setDateFilter(addDaysYmd(kstTodayYmd(), 1))}
-            >
-              {"\uB0B4\uC77C"}
-            </button>
-          </div>
         </div>
-        <div className="mt-2 text-xs text-[#8D8D98]">{"\uD45C\uC2DC"}: {filteredRequests.length} / {"\uC804\uCCB4"}: {requests.length}</div>
+
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text-muted)] sm:w-auto"
+            onClick={() => setDateFilter(kstTodayYmd())}
+          >
+            오늘
+          </button>
+          <button
+            type="button"
+            className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text-muted)] sm:w-auto"
+            onClick={() => setDateFilter(addDaysYmd(kstTodayYmd(), 1))}
+          >
+            내일
+          </button>
+          <button
+            type="button"
+            className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text-muted)] sm:w-auto"
+            onClick={() => {
+              setDateFilter("");
+              setStatusFilter("all");
+            }}
+          >
+            필터 초기화
+          </button>
+        </div>
 
         <div className="mt-6 space-y-3">
           {filteredRequests.length === 0 ? (
-            <div className="rounded-xl border border-[#1E1E26] bg-[#0B0B0E] p-4 text-sm text-[#B8B8C3]">
-              {requests.length === 0 ? "\uC0C1\uB2F4 \uC694\uCCAD\uC774 \uC5C6\uC2B5\uB2C8\uB2E4." : "\uD604\uC7AC \uD544\uD130\uC5D0 \uB9DE\uB294 \uC0C1\uB2F4 \uC694\uCCAD\uC774 \uC5C6\uC2B5\uB2C8\uB2E4."}
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] p-4 text-sm text-[var(--text-muted)]">
+              {requests.length === 0 ? "상담 요청이 없습니다." : "현재 필터에 맞는 상담 요청이 없습니다."}
             </div>
           ) : (
             filteredRequests.map((row) => {
               const student = profileMap[row.student_id];
               const guardian = profileMap[row.guardian_id];
               const hasResolvedStudent = !!student;
-              const manualSchoolLevel = getManualSchoolLevelLabel(row.manual_school_level);
-              const manualGradeText = row.manual_grade != null ? `${row.manual_grade}\uD559\uB144` : "\uBBF8\uC785\uB825";
-              const manualNameText = row.manual_student_name?.trim() || "\uC774\uB984\uC5C6\uC74C";
-              const manualClassText = row.manual_class_label?.trim() ? ` (${row.manual_class_label.trim()})` : "";
-              const manualStudentNoText = row.manual_student_no?.trim() || "";
               const studentLine = hasResolvedStudent
-                ? (student?.name ?? "\uC774\uB984 \uC5C6\uC74C") + (student?.email ? ` (${student.email})` : "")
-                : `${manualSchoolLevel} ${manualGradeText} ${manualNameText}${manualClassText}`;
-              const guardianLine = guardian?.email || row.manual_guardian_contact?.trim() || "\uC774\uBA54\uC77C \uC5C6\uC74C";
-              const contentText = row.manual_consultation_content?.trim() || row.notes || "-";
+                ? `${student?.name ?? "이름 없음"}${student?.email ? ` (${student.email})` : ""}`
+                : `${getManualSchoolLevelLabel(row.manual_school_level)} ${row.manual_grade ?? "-"}학년 ${row.manual_student_name?.trim() || "이름 없음"}${row.manual_class_label?.trim() ? ` ${row.manual_class_label.trim()}반` : ""}`;
+              const guardianLine = guardian?.email || row.manual_guardian_contact?.trim() || "연락처 없음";
+              const contentText = row.manual_consultation_content?.trim() || row.notes?.trim() || "-";
               const isRequested = row.status === "requested";
               const isConfirmed = row.status === "confirmed";
               const isConfirmBusy = actionBusyKey === `status:${row.id}:confirmed`;
@@ -435,106 +506,119 @@ export default function OwnerConsultRequestsPage() {
               const isDoneBusy = actionBusyKey === `status:${row.id}:done`;
               const isNoShowBusy = actionBusyKey === `status:${row.id}:no_show`;
               const isNoteBusy = actionBusyKey === `note:${row.id}`;
+              const isSummaryBusy = actionBusyKey === `summary:${row.id}`;
 
               return (
                 <div
                   id={`req-${row.id}`}
                   key={row.id}
-                  className={`rounded-xl border bg-[#0B0B0E] p-4 transition-colors ${
-                    highlightId === row.id
-                      ? "border-[#D4AF37] bg-[#17130A]"
-                      : "border-[#1E1E26]"
+                  className={`rounded-2xl border bg-[var(--card)] p-4 md:p-5 lg:p-6 ${
+                    highlightId === row.id ? "border-[var(--accent)]" : "border-[var(--border)]"
                   }`}
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-sm text-[#F5F5F7]">{fmt(row.requested_start_at)}</div>
-                    <span className="rounded-lg border border-[#1E1E26] px-2 py-1 text-xs text-[#B8B8C3]">
-                      {row.status}
-                    </span>
-                  </div>
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-semibold text-[var(--text)]">{fmt(row.requested_start_at)}</h3>
+                        <Badge variant={statusBadgeVariant(row.status)}>{statusLabel(row.status)}</Badge>
+                        <span className="text-xs text-[var(--text-muted)]">{row.duration_min}분</span>
+                      </div>
+                      <div className="mt-3 space-y-1 text-sm text-[var(--text-muted)]">
+                        <div>학생: {studentLine}</div>
+                        {!hasResolvedStudent && row.manual_student_no?.trim() ? <div>학번: {row.manual_student_no.trim()}</div> : null}
+                        <div>학부모: {guardianLine}</div>
+                        <div>유형: {row.type === "phone" ? "전화" : row.type === "in_person" ? "대면" : row.type}</div>
+                        <div>상담 내용: {contentText}</div>
+                      </div>
+                    </div>
 
-                  <div className="mt-2 text-sm text-[#B8B8C3]">
-                    {"\uD559\uC0DD"}: {studentLine}
-                    {!hasResolvedStudent && manualStudentNoText && (
-                      <span className="ml-2 text-xs text-[#8D8D98]">/ {"\uD559\uBC88"} {manualStudentNoText}</span>
-                    )}
-                  </div>
-                  <div className="mt-1 text-sm text-[#B8B8C3]">{"\uBCF4\uD638\uC790"}: {guardianLine}</div>
-                  <div className="mt-1 text-sm text-[#B8B8C3]">{"\uC720\uD615"}: {row.type}</div>
-                  <div className="mt-1 text-sm text-[#B8B8C3]">{"\uB0B4\uC6A9"}: {contentText}</div>
+                    <div className="flex w-full flex-col gap-2 md:w-auto md:min-w-[220px]">
+                      {isRequested ? (
+                        <>
+                          <button
+                            className="w-full rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[var(--bg)] disabled:opacity-60"
+                            onClick={() => void applyStatus(row, "confirmed")}
+                            disabled={isConfirmBusy}
+                          >
+                            {isConfirmBusy ? "처리 중..." : "확정"}
+                          </button>
+                          <button
+                            className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text-muted)] disabled:opacity-60"
+                            onClick={() => void applyStatus(row, "canceled")}
+                            disabled={isCancelBusy}
+                          >
+                            {isCancelBusy ? "처리 중..." : "취소/반려"}
+                          </button>
+                        </>
+                      ) : null}
 
-                  <button
-                    className="mt-3 rounded-xl border border-[#1E1E26] px-3 py-2 text-sm text-[#B8B8C3] hover:text-[#F5F5F7]"
-                    onClick={() => setEditingId((prev) => (prev === row.id ? null : row.id))}
-                  >
-                    {editingId === row.id ? "\uB178\uD2B8 \uB2EB\uAE30" : "\uB178\uD2B8/\uCC98\uB9AC"}
-                  </button>
+                      {row.status !== "done" && row.status !== "canceled" && row.status !== "no_show" ? (
+                        <button
+                          className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text-muted)] disabled:opacity-60"
+                          onClick={() => void applyStatus(row, "done")}
+                          disabled={isDoneBusy}
+                        >
+                          {isDoneBusy ? "처리 중..." : "완료 처리"}
+                        </button>
+                      ) : null}
 
-                  {editingId === row.id && (
-                    <div className="mt-3">
-                      <label className="mb-2 block text-xs text-[#B8B8C3]">{"\uC6D0\uC7A5/\uAD50\uC0AC \uBA54\uBAA8"}</label>
-                      <textarea
-                        className="min-h-24 w-full rounded-xl border border-[#1E1E26] bg-[#121218] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#D4AF37]"
-                        value={ownerNotes[row.id] ?? ""}
-                        onChange={(e) =>
-                          setOwnerNotes((prev) => ({
-                            ...prev,
-                            [row.id]: e.target.value,
-                          }))
-                        }
-                      />
+                      {isConfirmed ? (
+                        <button
+                          className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text-muted)] disabled:opacity-60"
+                          onClick={() => void applyStatus(row, "no_show")}
+                          disabled={isNoShowBusy}
+                        >
+                          {isNoShowBusy ? "처리 중..." : "노쇼 처리"}
+                        </button>
+                      ) : null}
+
                       <button
-                        className="mt-2 rounded-xl border border-[#1E1E26] px-3 py-2 text-sm text-[#B8B8C3] hover:text-[#F5F5F7] disabled:opacity-60"
+                        className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text-muted)] disabled:opacity-60"
+                        onClick={() => void sendSummaryAnnouncement(row)}
+                        disabled={isSummaryBusy}
+                      >
+                        {isSummaryBusy ? "발송 중..." : "요약 알림 보내기"}
+                      </button>
+
+                      <button
+                        className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] px-4 py-3 text-sm text-[var(--text)]"
+                        onClick={() => setEditingId((prev) => (prev === row.id ? null : row.id))}
+                      >
+                        {editingId === row.id ? "메모 닫기" : "메모/처리 열기"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {editingId === row.id ? (
+                    <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] p-4">
+                      <label className="block text-sm text-[var(--text-muted)]">
+                        원장 메모
+                        <textarea
+                          className="mt-2 min-h-24 w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text)] outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                          value={ownerNotes[row.id] ?? ""}
+                          onChange={(e) =>
+                            setOwnerNotes((prev) => ({
+                              ...prev,
+                              [row.id]: e.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                      <button
+                        className="mt-3 w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text-muted)] disabled:opacity-60 md:w-auto"
                         onClick={() => void saveOwnerNote(row)}
                         disabled={isNoteBusy}
                       >
-                        {isNoteBusy ? "\uC800\uC7A5 \uC911..." : "\uBA54\uBAA8 \uC800\uC7A5"}
+                        {isNoteBusy ? "저장 중..." : "메모 저장"}
                       </button>
                     </div>
-                  )}
-
-                  {isRequested && (
-                    <div className="mt-3 flex gap-2">
-                      <button
-                        className="rounded-xl bg-[#D4AF37] px-3 py-2 text-sm font-semibold text-black disabled:opacity-60"
-                        onClick={() => void applyStatus(row, "confirmed")}
-                        disabled={isConfirmBusy}
-                      >
-                        {"\uD655\uC815"}
-                      </button>
-                      <button
-                        className="rounded-xl border border-[#1E1E26] px-3 py-2 text-sm text-[#B8B8C3] hover:text-[#F5F5F7] disabled:opacity-60"
-                        onClick={() => void applyStatus(row, "canceled")}
-                        disabled={isCancelBusy}
-                      >
-                        {"\uCDE8\uC18C/\uBC18\uB824"}
-                      </button>
-                    </div>
-                  )}
-                  {isConfirmed && (
-                    <div className="mt-3 flex gap-2">
-                      <button
-                        className="rounded-xl bg-[#D4AF37] px-3 py-2 text-sm font-semibold text-black disabled:opacity-60"
-                        onClick={() => void applyStatus(row, "done")}
-                        disabled={isDoneBusy}
-                      >
-                        {"\uC644\uB8CC"}
-                      </button>
-                      <button
-                        className="rounded-xl border border-[#1E1E26] px-3 py-2 text-sm text-[#B8B8C3] hover:text-[#F5F5F7] disabled:opacity-60"
-                        onClick={() => void applyStatus(row, "no_show")}
-                        disabled={isNoShowBusy}
-                      >
-                        {"\uB178\uC1FC"}
-                      </button>
-                    </div>
-                  )}
+                  ) : null}
                 </div>
               );
             })
           )}
         </div>
-      </div>
-    </main>
+      </SectionCard>
+    </PageShell>
   );
 }

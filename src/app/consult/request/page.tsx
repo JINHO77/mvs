@@ -10,7 +10,12 @@ import {
   loadConfirmedSlots as loadConfirmedSlotsShared,
   loadOwnerBlockedSlots as loadOwnerBlockedSlotsShared,
 } from "@/lib/consultSlots";
+import Badge from "@/components/ui/Badge";
+import HomeLink from "@/components/common/HomeLink";
+import PageShell from "@/components/ui/PageShell";
+import { getLinkedStudentCountForGuardian } from "@/lib/parentGuard";
 import { supabase } from "@/lib/supabaseClient";
+import SectionCard from "@/components/ui/SectionCard";
 
 type SchoolLevel = "elem" | "mid" | "high";
 type RequestStatus = "requested" | "confirmed" | "canceled" | "cancelled" | "done" | "no_show";
@@ -85,42 +90,49 @@ function getStatusLabel(status: RequestStatus): string {
 function getStatusTone(status: RequestStatus): { cardClass: string; badgeClass: string } {
   if (status === "confirmed") {
     return {
-      cardClass: "border-[#2D5E41] bg-[#101E16]",
-      badgeClass: "border-[#2D5E41] bg-[#14261B] text-[#A6F4C5]",
+      cardClass: "border-[var(--success-text)] bg-[var(--success-bg)]",
+      badgeClass: "border-[var(--success-text)] bg-[var(--success-bg)] text-[var(--success-text)]",
     };
   }
   if (status === "canceled") {
     return {
-      cardClass: "border-[#6A2B2B] bg-[#1F1111]",
-      badgeClass: "border-[#6A2B2B] bg-[#2A1414] text-[#FFB4B4]",
+      cardClass: "border-[var(--danger-text)] bg-[var(--danger-bg)]",
+      badgeClass: "border-[var(--danger-text)] bg-[var(--danger-bg)] text-[var(--danger-text)]",
     };
   }
   if (status === "cancelled") {
     return {
-      cardClass: "border-[#6A2B2B] bg-[#1F1111]",
-      badgeClass: "border-[#6A2B2B] bg-[#2A1414] text-[#FFB4B4]",
+      cardClass: "border-[var(--danger-text)] bg-[var(--danger-bg)]",
+      badgeClass: "border-[var(--danger-text)] bg-[var(--danger-bg)] text-[var(--danger-text)]",
     };
   }
   if (status === "done") {
     return {
-      cardClass: "border-[#2E3A4D] bg-[#101722]",
-      badgeClass: "border-[#2E3A4D] bg-[#151C26] text-[#B9D8FF]",
+      cardClass: "border-[var(--border)] bg-[var(--card-muted)]",
+      badgeClass: "border-[var(--border)] bg-[var(--card)] text-[var(--text)]",
     };
   }
   if (status === "no_show") {
     return {
-      cardClass: "border-[#2A2A35] bg-[#121218]",
-      badgeClass: "border-[#2A2A35] bg-[#14141A] text-[#B8B8C3]",
+      cardClass: "border-[var(--border)] bg-[var(--card-muted)]",
+      badgeClass: "border-[var(--border)] bg-[var(--card)] text-[var(--muted)]",
     };
   }
   return {
-    cardClass: "border-[#3F3820] bg-[#1A160C]",
-    badgeClass: "border-[#3F3820] bg-[#1D170A] text-[#E7D7A0]",
+    cardClass: "border-[var(--accent)] bg-[var(--card-muted)]",
+    badgeClass: "border-[var(--accent)] bg-[var(--card)] text-[var(--text)]",
   };
 }
 
 function getTypeLabel(type: "phone" | "in_person"): string {
   return type === "phone" ? "\uC804\uD654" : "\uB300\uBA74";
+}
+
+function getStatusBadgeVariant(status: RequestStatus): "neutral" | "warning" | "success" | "danger" {
+  if (status === "requested") return "warning";
+  if (status === "confirmed" || status === "done") return "success";
+  if (status === "canceled" || status === "cancelled") return "danger";
+  return "neutral";
 }
 
 export default function ConsultRequestPage() {
@@ -186,30 +198,30 @@ export default function ConsultRequestPage() {
     if (!bannerRequest) return null;
     if (bannerRequest.status === "confirmed") {
       return {
-        className: "border-[#2D5E41] bg-[#14261B] text-[#A6F4C5]",
+        className: "border-[var(--success-text)] bg-[var(--success-bg)] text-[var(--success-text)]",
         message: "\uC0C1\uB2F4 \uC77C\uC815\uC774 \uD655\uC815\uB418\uC5C8\uC2B5\uB2C8\uB2E4",
       };
     }
     if (bannerRequest.status === "requested") {
       return {
-        className: "border-[#3F3820] bg-[#1D170A] text-[#E7D7A0]",
+        className: "border-[var(--accent)] bg-[var(--card)] text-[var(--text)]",
         message: "\uC0C1\uB2F4 \uC694\uCCAD\uC774 \uC811\uC218\uB418\uC5C8\uC2B5\uB2C8\uB2E4(\uB300\uAE30)",
       };
     }
     if (bannerRequest.status === "canceled") {
       return {
-        className: "border-[#6A2B2B] bg-[#2A1414] text-[#FFB4B4]",
+        className: "border-[var(--danger-text)] bg-[var(--danger-bg)] text-[var(--danger-text)]",
         message: "\uC0C1\uB2F4 \uC77C\uC815\uC774 \uCDE8\uC18C\uB418\uC5C8\uC2B5\uB2C8\uB2E4",
       };
     }
     if (bannerRequest.status === "done") {
       return {
-        className: "border-[#2E3A4D] bg-[#151C26] text-[#B9D8FF]",
+        className: "border-[var(--border)] bg-[var(--card)] text-[var(--text)]",
         message: "\uC0C1\uB2F4\uC774 \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4",
       };
     }
     return {
-      className: "border-[#2A2A35] bg-[#14141A] text-[#B8B8C3]",
+      className: "border-[var(--border)] bg-[var(--card)] text-[var(--muted)]",
       message: "\uC0C1\uD0DC \uCC98\uB9AC\uB418\uC5C8\uC2B5\uB2C8\uB2E4",
     };
   }, [bannerRequest]);
@@ -316,6 +328,18 @@ export default function ConsultRequestPage() {
     if (me.role !== "parent") {
       setError("\uC811\uADFC \uAD8C\uD55C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.");
       router.replace("/");
+      return;
+    }
+
+    try {
+      const linkedCount = await getLinkedStudentCountForGuardian(uid);
+      if (linkedCount === 0) {
+        router.replace("/parent/onboarding/link");
+        return;
+      }
+    } catch (e: unknown) {
+      setError(`\uC790\uB140 \uC5F0\uACB0 \uD655\uC778 \uC2E4\uD328: ${e instanceof Error ? e.message : String(e)}`);
+      setLoading(false);
       return;
     }
 
@@ -511,38 +535,35 @@ export default function ConsultRequestPage() {
   };
 
   if (loading) {
-    return (
-      <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] flex items-center justify-center">
-        {"\uB85C\uB529 \uC911..."}
-      </main>
-    );
+    return <PageShell maxWidthClassName="max-w-3xl">{"\uB85C\uB529 \uC911..."}</PageShell>;
   }
 
   return (
-    <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6">
-      <div className="mx-auto w-full max-w-3xl rounded-2xl border border-[#1E1E26] bg-[#121218] p-6">
-        <h1 className="text-2xl font-semibold">
-          <span className="text-[#D4AF37]">MVS</span> {"\uC0C1\uB2F4 \uC608\uC57D \uC694\uCCAD"}
-        </h1>
-
+    <PageShell
+      title={"\uC0C1\uB2F4 \uC608\uC57D \uC694\uCCAD"}
+      subtitle={"\uD76C\uB9DD \uC77C\uC815\uACFC \uB0B4\uC6A9\uC744 \uC785\uB825\uD558\uBA74 \uC0C1\uB2F4 \uC694\uCCAD\uC774 \uC811\uC218\uB429\uB2C8\uB2E4."}
+      maxWidthClassName="max-w-3xl"
+      actions={<HomeLink fallbackHref="/parent" />}
+    >
+      <SectionCard className="mx-auto w-full max-w-3xl p-6">
         {error && (
-          <div className="mt-4 rounded-xl border border-[#6A2B2B] bg-[#2A1414] p-3 text-sm text-[#FFB4B4]">
+          <div className="mt-4 rounded-xl border border-[var(--danger-text)] bg-[var(--danger-bg)] p-3 text-sm text-[var(--danger-text)]">
             {error}
           </div>
         )}
 
         {success && (
-          <div className="mt-4 rounded-xl border border-[#2D5E41] bg-[#14261B] p-3 text-sm text-[#A6F4C5]">
+          <div className="mt-4 rounded-xl border border-[var(--success-text)] bg-[var(--success-bg)] p-3 text-sm text-[var(--success-text)]">
             {success}
           </div>
         )}
 
         {myStudents.length === 0 && (
-          <div className="mt-4 rounded-xl border border-[#6A2B2B] bg-[#2A1414] p-3 text-sm text-[#FFB4B4]">
+          <div className="mt-4 rounded-xl border border-[var(--danger-text)] bg-[var(--danger-bg)] p-3 text-sm text-[var(--danger-text)]">
             <div>{"\uC5F0\uACB0\uB41C \uC790\uB140\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. \uBA3C\uC800 \uC790\uB140\uB97C \uC5F0\uACB0\uD574 \uC8FC\uC138\uC694."}</div>
             <Link
               href="/parent/students"
-              className="mt-2 inline-block rounded-lg border border-[#1E1E26] px-3 py-1.5 text-xs text-[#B8B8C3] hover:text-[#F5F5F7]"
+              className="mt-2 inline-block rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--muted)] hover:text-[var(--text)]"
             >
               {"\uC790\uB140 \uAD00\uB9AC\uB85C \uC774\uB3D9"}
             </Link>
@@ -560,10 +581,10 @@ export default function ConsultRequestPage() {
 
         <div className="mt-6 grid grid-cols-1 gap-4">
           {myStudents.length > 0 && (
-            <label className="block text-sm text-[#B8B8C3]">
+            <label className="block text-sm text-[var(--muted)]">
               {"\uC790\uB140 \uC120\uD0DD *"}
               <select
-                className="mt-2 w-full rounded-xl border border-[#1E1E26] bg-[#0B0B0E] px-4 py-3 outline-none focus:ring-2 focus:ring-[#D4AF37]"
+                className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 outline-none focus:ring-2 focus:ring-[var(--accent)]"
                 value={selectedStudentId}
                 onChange={(e) => setSelectedStudentId(e.target.value)}
               >
@@ -582,19 +603,19 @@ export default function ConsultRequestPage() {
             </label>
           )}
 
-          <label className="block text-sm text-[#B8B8C3]">
+          <label className="block text-sm text-[var(--muted)]">
             {"\uD559\uC0DD \uC774\uB984 *"}
             <input
-              className="mt-2 w-full rounded-xl border border-[#1E1E26] bg-[#0B0B0E] px-4 py-3 outline-none focus:ring-2 focus:ring-[#D4AF37]"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 outline-none focus:ring-2 focus:ring-[var(--accent)]"
               value={studentName}
               onChange={(e) => setStudentName(e.target.value)}
             />
           </label>
 
-          <label className="block text-sm text-[#B8B8C3]">
+          <label className="block text-sm text-[var(--muted)]">
             {"\uD559\uAD50\uAE09 *"}
             <select
-              className="mt-2 w-full rounded-xl border border-[#1E1E26] bg-[#0B0B0E] px-4 py-3 outline-none focus:ring-2 focus:ring-[#D4AF37]"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 outline-none focus:ring-2 focus:ring-[var(--accent)]"
               value={schoolLevel}
               onChange={(e) => setSchoolLevel((e.target.value as SchoolLevel) || "")}
             >
@@ -605,73 +626,73 @@ export default function ConsultRequestPage() {
             </select>
           </label>
 
-          <label className="block text-sm text-[#B8B8C3]">
+          <label className="block text-sm text-[var(--muted)]">
             {"\uD559\uB144 *"}
             <input
               type="number"
               min={1}
-              className="mt-2 w-full rounded-xl border border-[#1E1E26] bg-[#0B0B0E] px-4 py-3 outline-none focus:ring-2 focus:ring-[#D4AF37]"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 outline-none focus:ring-2 focus:ring-[var(--accent)]"
               value={grade}
               onChange={(e) => setGrade(e.target.value ? Number(e.target.value) : "")}
             />
           </label>
 
-          <label className="block text-sm text-[#B8B8C3]">
+          <label className="block text-sm text-[var(--muted)]">
             {"\uBC18 (\uC120\uD0DD)"}
             <input
-              className="mt-2 w-full rounded-xl border border-[#1E1E26] bg-[#0B0B0E] px-4 py-3 outline-none focus:ring-2 focus:ring-[#D4AF37]"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 outline-none focus:ring-2 focus:ring-[var(--accent)]"
               value={classLabel}
               onChange={(e) => setClassLabel(e.target.value)}
             />
           </label>
 
-          <label className="block text-sm text-[#B8B8C3]">
+          <label className="block text-sm text-[var(--muted)]">
             {"\uD559\uBC88 (\uC120\uD0DD)"}
             <input
-              className="mt-2 w-full rounded-xl border border-[#1E1E26] bg-[#0B0B0E] px-4 py-3 outline-none focus:ring-2 focus:ring-[#D4AF37]"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 outline-none focus:ring-2 focus:ring-[var(--accent)]"
               value={studentNo}
               onChange={(e) => setStudentNo(e.target.value)}
             />
           </label>
 
-          <label className="block text-sm text-[#B8B8C3]">
+          <label className="block text-sm text-[var(--muted)]">
             {"\uBCF4\uD638\uC790 \uC5F0\uB77D\uCC98 *"}
             <input
-              className="mt-2 w-full rounded-xl border border-[#1E1E26] bg-[#0B0B0E] px-4 py-3 outline-none focus:ring-2 focus:ring-[#D4AF37]"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 outline-none focus:ring-2 focus:ring-[var(--accent)]"
               value={guardianContact}
               onChange={(e) => setGuardianContact(e.target.value)}
             />
           </label>
 
-          <label className="block text-sm text-[#B8B8C3]">
+          <label className="block text-sm text-[var(--muted)]">
             {"\uC0C1\uB2F4 \uB0B4\uC6A9 *"}
             <textarea
-              className="mt-2 min-h-28 w-full rounded-xl border border-[#1E1E26] bg-[#0B0B0E] px-4 py-3 outline-none focus:ring-2 focus:ring-[#D4AF37]"
+              className="mt-2 min-h-28 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 outline-none focus:ring-2 focus:ring-[var(--accent)]"
               value={consultationContent}
               onChange={(e) => setConsultationContent(e.target.value)}
             />
           </label>
 
           <div>
-            <label className="mb-2 block text-sm text-[#B8B8C3]">{"\uB0A0\uC9DC *"}</label>
+            <label className="mb-2 block text-sm text-[var(--muted)]">{"\uB0A0\uC9DC *"}</label>
             <input
               type="date"
-              className="w-full rounded-xl border border-[#1E1E26] bg-[#0B0B0E] px-4 py-3 outline-none focus:ring-2 focus:ring-[#D4AF37]"
+              className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 outline-none focus:ring-2 focus:ring-[var(--accent)]"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
             />
-            {dayHint && <p className="mt-2 text-xs text-[#B8B8C3]">{dayHint}</p>}
+            {dayHint && <p className="mt-2 text-xs text-[var(--muted)]">{dayHint}</p>}
             {dayMode === "closed" && (
-              <p className="mt-2 text-xs text-[#B8B8C3]">
+              <p className="mt-2 text-xs text-[var(--muted)]">
                 {"\uD604\uC7AC \uD1A0\uC694\uC77C\uC740 \uC0C1\uB2F4\uC744 \uC6B4\uC601\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."}
               </p>
             )}
           </div>
 
           <div>
-            <label className="mb-2 block text-sm text-[#B8B8C3]">{"\uC0C1\uB2F4 \uC720\uD615"}</label>
+            <label className="mb-2 block text-sm text-[var(--muted)]">{"\uC0C1\uB2F4 \uC720\uD615"}</label>
             <select
-              className="w-full rounded-xl border border-[#1E1E26] bg-[#0B0B0E] px-4 py-3 outline-none focus:ring-2 focus:ring-[#D4AF37]"
+              className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 outline-none focus:ring-2 focus:ring-[var(--accent)]"
               value={type}
               onChange={(e) => setType(e.target.value as "phone" | "in_person")}
               disabled={typeDisabled}
@@ -682,15 +703,9 @@ export default function ConsultRequestPage() {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm text-[#B8B8C3]">{"\uC2DC\uAC04 *"}</label>
-            {process.env.NODE_ENV !== "production" && (
-              <p className="mb-2 text-xs text-[#8D8D98]">
-                selectedDate: {selectedDate || "(none)"} / confirmedSlots.size: {confirmedSlots.size} / keys:{" "}
-                {Array.from(confirmedSlots).slice(0, 5).join(", ") || "(empty)"}
-              </p>
-            )}
+            <label className="mb-2 block text-sm text-[var(--muted)]">{"\uC2DC\uAC04 *"}</label>
             {!showGrid ? (
-              <div className="rounded-xl border border-[#1E1E26] bg-[#0B0B0E] p-3 text-sm text-[#6F6F7D]">
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-3 text-sm text-[var(--muted)]">
                 {"\uC120\uD0DD \uAC00\uB2A5\uD55C \uC2DC\uAC04\uB300\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4."}
               </div>
             ) : (
@@ -708,14 +723,14 @@ export default function ConsultRequestPage() {
                       disabled={disabled}
                       className={`rounded-lg border px-2 py-2 text-sm transition ${
                         isConfirmed
-                          ? "border-[#2D5E41] bg-[#14261B] text-[#A6F4C5]"
+                          ? "border-[var(--success-text)] bg-[var(--success-bg)] text-[var(--success-text)]"
                           : isOwnerBlocked
-                            ? "border-[#3A3A45] bg-[#1A1A22] text-[#9A9AA6]"
+                            ? "border-[var(--border)] bg-[var(--card-soft)] text-[var(--text-muted)]"
                           : selected
-                            ? "border-[#D4AF37] bg-[#2A2414] text-[#F5F5F7]"
+                            ? "border-[var(--accent)] bg-[var(--card-muted)] text-[var(--text)]"
                           : disabled
-                            ? "border-[#1E1E26] bg-[#0B0B0E] text-[#6F6F7D] opacity-50"
-                            : "border-[#1E1E26] bg-[#0B0B0E] text-[#B8B8C3] hover:text-[#F5F5F7]"
+                            ? "border-[var(--border)] bg-[var(--card)] text-[var(--muted)] opacity-50"
+                            : "border-[var(--border)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--text)]"
                       }`}
                     >
                       {slot}
@@ -728,7 +743,7 @@ export default function ConsultRequestPage() {
           </div>
 
           <button
-            className="w-full rounded-xl bg-[#D4AF37] px-4 py-3 font-semibold text-black disabled:opacity-60"
+            className="w-full rounded-xl bg-[var(--accent)] px-4 py-3 font-semibold text-[var(--bg)] disabled:opacity-60"
             onClick={() => void submit()}
             disabled={submitting || myStudents.length === 0}
           >
@@ -736,12 +751,12 @@ export default function ConsultRequestPage() {
           </button>
         </div>
 
-        <h2 className="mt-8 text-lg font-semibold text-[#F5F5F7]">{"\uB0B4 \uC694\uCCAD"}</h2>
+        <h2 className="mt-8 text-lg font-semibold text-[var(--text)]">{"\uB0B4 \uC694\uCCAD"}</h2>
         <div className="mt-3 space-y-3">
           {requests.length === 0 ? (
-            <div className="rounded-xl border border-[#1E1E26] bg-[#0B0B0E] p-4 text-sm text-[#B8B8C3]">
+            <SectionCard className="p-4 text-sm text-[var(--muted)] shadow-none">
               {"\uC694\uCCAD \uB0B4\uC5ED\uC774 \uC5C6\uC2B5\uB2C8\uB2E4."}
-            </div>
+            </SectionCard>
           ) : (
             requests.map((row) => {
               const tone = getStatusTone(row.status);
@@ -755,22 +770,20 @@ export default function ConsultRequestPage() {
                 row.status !== "requested" ||
                 cancelingRequestId === row.id;
               return (
-                <div
+                <SectionCard
                   key={row.id}
-                  className={`rounded-xl border p-4 ${
-                    highlightRequestId === row.id ? "border-[#D4AF37] ring-1 ring-[#D4AF37]" : tone.cardClass
+                  className={`p-4 ${
+                    highlightRequestId === row.id ? "border-[var(--accent)] ring-1 ring-[var(--accent)]" : tone.cardClass
                   } ${dimmed ? "opacity-80" : ""}`}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-sm text-[#F5F5F7]">
+                    <div className="text-sm text-[var(--text)]">
                       {fmtKst(row.requested_start_at)} / {getTypeLabel(row.type)}
                     </div>
-                    <span className={`rounded-lg border px-2 py-1 text-xs ${tone.badgeClass}`}>
-                      {getStatusLabel(row.status)}
-                    </span>
+                    <Badge variant={getStatusBadgeVariant(row.status)}>{getStatusLabel(row.status)}</Badge>
                   </div>
                   <p
-                    className="mt-2 text-sm text-[#B8B8C3] overflow-hidden"
+                    className="mt-2 text-sm text-[var(--muted)] overflow-hidden"
                     style={{
                       display: "-webkit-box",
                       WebkitLineClamp: 2,
@@ -781,18 +794,18 @@ export default function ConsultRequestPage() {
                   </p>
                   <button
                     type="button"
-                    className="mt-3 rounded-lg border border-[#1E1E26] px-3 py-1.5 text-xs text-[#B8B8C3] hover:text-[#F5F5F7] disabled:opacity-60"
+                    className="mt-3 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-60"
                     onClick={() => void cancelMyRequest(row.id)}
                     disabled={cancelDisabled}
                   >
                     {cancelingRequestId === row.id ? "\uCDE8\uC18C \uCC98\uB9AC \uC911..." : "\uCDE8\uC18C"}
                   </button>
-                </div>
+                </SectionCard>
               );
             })
           )}
         </div>
-      </div>
-    </main>
+      </SectionCard>
+    </PageShell>
   );
 }

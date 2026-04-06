@@ -1,30 +1,94 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import HomeLink from "@/components/common/HomeLink";
+import PageShell from "@/components/ui/PageShell";
+import SectionCard from "@/components/ui/SectionCard";
+import { ANNOUNCEMENT_TEXT } from "@/constants/announcements.ko";
+import { getAnnouncementCategoryBadgeVariant, getAnnouncementCategoryLabel } from "@/constants/announcementMeta";
+import { fetchMyAnnouncements, type MyAnnouncementCounts, type MyAnnouncementItem } from "@/lib/announcements";
+import { getLinkedStudentCountForGuardian } from "@/lib/parentGuard";
+import { toPrettyErrorString } from "@/lib/supabaseError";
 import { supabase } from "@/lib/supabaseClient";
-import { fetchAnnouncementReads, fetchAnnouncements, type Announcement } from "@/lib/announcements";
 
-type FilterMode = "all" | "unread";
+type FilterMode = "all" | "unread" | "unacknowledged" | "pinned";
+type SortMode = "latest" | "oldest";
+
+function formatCreatedAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("ko-KR");
+}
+
+function preview(body: string): string {
+  const text = body.trim();
+  if (text.length <= 120) return text;
+  return `${text.slice(0, 120)}...`;
+}
+
+function isMissingAccountStatusError(error: unknown): boolean {
+  const pretty = toPrettyErrorString(error).toLowerCase();
+  return pretty.includes("account_status")
+    && (pretty.includes("does not exist") || pretty.includes("column") || pretty.includes("42703"));
+}
 
 export default function AnnouncementsPage() {
   const router = useRouter();
   const isDevMode = useMemo(() => process.env.NEXT_PUBLIC_DEV_MODE === "true", []);
+  const text = ANNOUNCEMENT_TEXT as Record<string, string>;
+
+  const tabAllLabel = text.tabAll ?? ANNOUNCEMENT_TEXT.filterAll;
+  const tabUnreadLabel = text.tabUnread ?? ANNOUNCEMENT_TEXT.filterUnread;
+  const tabUnackLabel = text.tabUnacknowledged ?? "확인 필요";
+  const tabPinnedLabel = ANNOUNCEMENT_TEXT.filterStarred;
+  const ackDoneBadge = text.ackDoneBadge ?? "확인 완료";
 
   const [loading, setLoading] = useState(true);
+  const [isReady, setIsReady] = useState(false);
+  const [listLoading, setListLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [readIds, setReadIds] = useState<Set<string>>(new Set());
+  const [devErrorSummary, setDevErrorSummary] = useState<string | null>(null);
+
+  const [announcements, setAnnouncements] = useState<MyAnnouncementItem[]>([]);
+  const [counts, setCounts] = useState<MyAnnouncementCounts>({
+    total: 0,
+    unread: 0,
+    unacknowledged: 0,
+    pinned: 0,
+    with_attachments: 0,
+  });
+
+  const [queryText, setQueryText] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
+  const [sortMode, setSortMode] = useState<SortMode>("latest");
+  const [withAttachmentOnly, setWithAttachmentOnly] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const reqRef = useRef(0);
 
   useEffect(() => {
     void initialize();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(queryText);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [queryText]);
+
+  useEffect(() => {
+    if (!isReady) return;
+    void loadAnnouncements();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, debouncedQuery, filterMode, sortMode, withAttachmentOnly, offset]);
+
   const initialize = async () => {
     setError(null);
+    setDevErrorSummary(null);
 
     const {
       data: { session },
@@ -32,7 +96,8 @@ export default function AnnouncementsPage() {
     } = await supabase.auth.getSession();
 
     if (sessionError) {
-      setError(`세션 확인 실패: ${sessionError.message}`);
+      setError(`${ANNOUNCEMENT_TEXT.loadErrorFallback} 승인 상태/권한을 확인해 주세요.`);
+      setDevErrorSummary(toPrettyErrorString(sessionError));
       setLoading(false);
       return;
     }
@@ -42,114 +107,274 @@ export default function AnnouncementsPage() {
       return;
     }
 
-    const currentUserId = session.user.id;
+    let role = "";
+    let status = "active";
 
+    const { data: profileRow, error: profileError } = await supabase
+      .from("profiles")
+      .select("role, account_status")
+      .eq("id", session.user.id)
+      .maybeSingle<{ role: string | null; account_status: string | null }>();
+
+    if (profileError) {
+      if (!isMissingAccountStatusError(profileError)) {
+        console.error("Announcements profile load failed:", toPrettyErrorString(profileError), profileError);
+        setError(`${ANNOUNCEMENT_TEXT.loadErrorFallback} 승인 상태/권한을 확인해 주세요.`);
+        setDevErrorSummary(toPrettyErrorString(profileError));
+        setLoading(false);
+        return;
+      }
+
+      const { data: fallbackProfile, error: fallbackError } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", session.user.id)
+        .maybeSingle<{ role: string | null }>();
+
+      if (fallbackError) {
+        console.error("Announcements role fallback failed:", toPrettyErrorString(fallbackError), fallbackError);
+        setError(`${ANNOUNCEMENT_TEXT.loadErrorFallback} 승인 상태/권한을 확인해 주세요.`);
+        setDevErrorSummary(toPrettyErrorString(fallbackError));
+        setLoading(false);
+        return;
+      }
+
+      role = (fallbackProfile?.role ?? "").trim();
+      status = "active";
+    } else {
+      role = (profileRow?.role ?? "").trim();
+      status = (profileRow?.account_status ?? "active").trim();
+    }
+
+    if (role === "owner") {
+      router.replace("/owner/announcements");
+      return;
+    }
+    if (status === "pending") {
+      router.replace("/onboarding/pending");
+      return;
+    }
+    if (status === "blocked" || status === "withdrawn") {
+      router.replace("/onboarding/blocked");
+      return;
+    }
+
+    if (role === "parent") {
+      try {
+        const linkedCount = await getLinkedStudentCountForGuardian(session.user.id);
+        if (linkedCount === 0) {
+          router.replace("/parent/onboarding/link");
+          return;
+        }
+      } catch (e: unknown) {
+        console.error("Announcements guardian link check failed:", toPrettyErrorString(e), e);
+      }
+    }
+
+    setIsReady(true);
+    setLoading(false);
+  };
+
+  const loadAnnouncements = async () => {
+    setListLoading(true);
+    setError(null);
+    setDevErrorSummary(null);
     try {
-      const [rows, readRows] = await Promise.all([fetchAnnouncements(), fetchAnnouncementReads(currentUserId)]);
-      setAnnouncements(rows);
-      setReadIds(new Set(readRows.map((row) => row.announcement_id)));
-      setLoading(false);
+      const reqId = ++reqRef.current;
+      const payload = await fetchMyAnnouncements({
+        status: filterMode,
+        limit: 200,
+        offset,
+        query: debouncedQuery.trim() || null,
+        sort: sortMode,
+        hasAttachments: withAttachmentOnly ? true : null,
+      });
+      if (reqId !== reqRef.current) return;
+      setAnnouncements(payload.items ?? []);
+      setCounts({
+        total: payload.counts.total ?? 0,
+        unread: payload.counts.unread ?? 0,
+        unacknowledged: payload.counts.unacknowledged ?? 0,
+        pinned: payload.counts.pinned ?? 0,
+        with_attachments: payload.counts.with_attachments ?? 0,
+      });
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "공지 조회에 실패했습니다.");
-      setLoading(false);
+      const pretty = toPrettyErrorString(e).toLowerCase();
+      const missingRpc = pretty.includes("pgrst202") || pretty.includes("get_my_announcements");
+      console.error("Announcements RPC load failed:", toPrettyErrorString(e), e);
+      setAnnouncements([]);
+      setCounts({
+        total: 0,
+        unread: 0,
+        unacknowledged: 0,
+        pinned: 0,
+        with_attachments: 0,
+      });
+      setError(missingRpc ? "알리미함 기능 준비 중입니다. 관리자에게 문의해 주세요." : `${ANNOUNCEMENT_TEXT.loadErrorFallback} 승인 상태/권한을 확인해 주세요.`);
+      setDevErrorSummary(missingRpc ? null : toPrettyErrorString(e));
+    } finally {
+      setListLoading(false);
     }
   };
 
-  const formatCreatedAt = (iso: string) => {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleString();
-  };
-
-  const preview = (body: string) => {
-    const text = body.trim();
-    if (text.length <= 120) return text;
-    return `${text.slice(0, 120)}...`;
-  };
-
-  const unreadCount = announcements.filter((item) => !readIds.has(item.id)).length;
-  const visibleAnnouncements =
-    filterMode === "unread" ? announcements.filter((item) => !readIds.has(item.id)) : announcements;
-
   if (loading) {
     return (
-      <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] flex items-center justify-center">
-        로딩 중...
+      <main className="flex min-h-screen items-center justify-center bg-[var(--bg)] text-[var(--text)]">
+        {ANNOUNCEMENT_TEXT.loading}
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6">
-      <div className="mx-auto w-full max-w-3xl rounded-2xl border border-[#1E1E26] bg-[#121218] p-6">
-        <h1 className="text-2xl font-semibold">
-          <span className="text-[#D4AF37]">MVS</span> 공지사항
-        </h1>
-        <p className="mt-2 text-xs text-[#6F6F7D]">공지 클릭 시 상세 보기</p>
+    <PageShell
+      title={ANNOUNCEMENT_TEXT.title}
+      subtitle={ANNOUNCEMENT_TEXT.subtitle}
+      maxWidthClassName="max-w-5xl"
+      actions={<HomeLink />}
+    >
+      <SectionCard>
 
-        <div className="mt-4 flex items-center justify-between gap-3">
-          <div className="inline-flex rounded-xl border border-[#1E1E26] bg-[#0B0B0E] p-1 text-sm">
-            <button
-              className={`rounded-lg px-3 py-1.5 ${
-                filterMode === "all" ? "bg-[#1E1E26] text-[#F5F5F7]" : "text-[#B8B8C3]"
-              }`}
-              onClick={() => setFilterMode("all")}
-            >
-              전체
-            </button>
-            <button
-              className={`rounded-lg px-3 py-1.5 ${
-                filterMode === "unread" ? "bg-[#1E1E26] text-[#F5F5F7]" : "text-[#B8B8C3]"
-              }`}
-              onClick={() => setFilterMode("unread")}
-            >
-              미읽음만
-            </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-2 py-0.5 text-xs text-[var(--text)]">
+            {ANNOUNCEMENT_TEXT.summaryUnread} {counts.unread}
+          </span>
+          <span className="inline-flex items-center rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-2 py-0.5 text-xs text-[var(--text)]">
+            {tabUnackLabel} {counts.unacknowledged}
+          </span>
+          <span className="inline-flex items-center rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-2 py-0.5 text-xs text-[var(--text)]">
+            {ANNOUNCEMENT_TEXT.summaryStarred} {counts.pinned}
+          </span>
+          <span className="inline-flex items-center rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-2 py-0.5 text-xs text-[var(--text)]">
+            {ANNOUNCEMENT_TEXT.summaryWithAttachments} {counts.with_attachments}
+          </span>
+        </div>
+
+        <div className="mt-4 space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] p-3 md:p-4">
+          <input
+            type="text"
+            value={queryText}
+            onChange={(e) => {
+              setQueryText(e.target.value);
+              setOffset(0);
+            }}
+            placeholder={ANNOUNCEMENT_TEXT.searchPlaceholder}
+            className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex flex-wrap rounded-xl border border-[var(--border)] bg-[var(--card)] p-1 text-sm">
+              <button
+                className={`rounded-lg px-3 py-1.5 ${filterMode === "all" ? "bg-[var(--card-soft)] text-[var(--text)]" : "text-[var(--text-muted)]"}`}
+                onClick={() => setFilterMode("all")}
+              >
+                {tabAllLabel}
+              </button>
+              <button
+                className={`rounded-lg px-3 py-1.5 ${filterMode === "unread" ? "bg-[var(--card-soft)] text-[var(--text)]" : "text-[var(--text-muted)]"}`}
+                onClick={() => setFilterMode("unread")}
+              >
+                {tabUnreadLabel}
+              </button>
+              <button
+                className={`rounded-lg px-3 py-1.5 ${filterMode === "unacknowledged" ? "bg-[var(--card-soft)] text-[var(--text)]" : "text-[var(--text-muted)]"}`}
+                onClick={() => setFilterMode("unacknowledged")}
+              >
+                {tabUnackLabel}
+              </button>
+              <button
+                className={`rounded-lg px-3 py-1.5 ${filterMode === "pinned" ? "bg-[var(--card-soft)] text-[var(--text)]" : "text-[var(--text-muted)]"}`}
+                onClick={() => setFilterMode("pinned")}
+              >
+                {tabPinnedLabel}
+              </button>
+            </div>
+            <label className="inline-flex w-full items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-xs text-[var(--text-muted)] sm:w-auto">
+              <input type="checkbox" checked={withAttachmentOnly} onChange={(e) => setWithAttachmentOnly(e.target.checked)} />
+              {ANNOUNCEMENT_TEXT.filterWithAttachmentsOnly}
+            </label>
+            <label className="inline-flex w-full items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-xs text-[var(--text-muted)] sm:w-auto">
+                {ANNOUNCEMENT_TEXT.sortLabel}
+              <select
+                value={sortMode}
+                onChange={(e) => setSortMode(e.target.value as SortMode)}
+                className="min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-xs text-[var(--text)] outline-none focus:border-[var(--accent)]"
+              >
+                <option value="latest">{ANNOUNCEMENT_TEXT.sortLatest}</option>
+                <option value="oldest">오래된순</option>
+              </select>
+            </label>
           </div>
-          <div className="text-xs text-[#B8B8C3]">미읽음 {unreadCount}개</div>
         </div>
 
         {error && (
-          <div className="mt-4 rounded-xl border border-[#6A2B2B] bg-[#2A1414] p-3 text-sm text-[#FFB4B4]">
+          <div className="mt-4 rounded-xl border border-[var(--danger-text)] bg-[var(--danger-bg)] p-3 text-sm text-[var(--danger-text)]">
             {error}
           </div>
         )}
+        {isDevMode && devErrorSummary && (
+          <div className="mt-2 text-xs text-[var(--text-muted)]">{devErrorSummary}</div>
+        )}
 
         <div className="mt-6 space-y-3">
-          {visibleAnnouncements.length === 0 ? (
-            <div className="rounded-xl border border-[#1E1E26] bg-[#0B0B0E] p-4 text-sm text-[#B8B8C3]">
-              {filterMode === "unread" ? "미읽음 공지사항이 없습니다." : "등록된 공지사항이 없습니다."}
+          {listLoading ? (
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 text-sm text-[var(--text-muted)] shadow-[var(--shadow)]">
+              {ANNOUNCEMENT_TEXT.loading}
+            </div>
+          ) : announcements.length === 0 ? (
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 text-sm text-[var(--text-muted)] shadow-[var(--shadow)]">
+              {queryText.trim()
+                ? ANNOUNCEMENT_TEXT.emptySearch
+                : filterMode === "unread"
+                  ? ANNOUNCEMENT_TEXT.emptyUnread
+                  : ANNOUNCEMENT_TEXT.empty}
             </div>
           ) : (
-            visibleAnnouncements.map((item) => {
-              const isRead = readIds.has(item.id);
-
-              return (
-                <Link
-                  key={item.id}
-                  href={`/announcements/${item.id}`}
-                  className="block rounded-xl border border-[#1E1E26] bg-[#0B0B0E] p-4 transition hover:border-[#3A3A46]"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <h2 className="text-lg font-semibold text-[#F5F5F7]">{item.title}</h2>
-                    <span
-                      className={`shrink-0 rounded-lg border px-2 py-1 text-xs ${
-                        isRead
-                          ? "border-[#2B6A3A] bg-[#142A1B] text-[#B8F5C6]"
-                          : "border-[#6A5B2B] bg-[#2A2414] text-[#F2DE9B]"
-                      }`}
-                    >
-                      {isRead ? "읽음" : "미읽음"}
-                    </span>
+            announcements.map((item) => (
+              <Link
+                key={item.id}
+                href={`/announcements/${item.id}`}
+                className="block rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow)] transition hover:border-[var(--accent)] md:p-5"
+              >
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0">
+                    <h2 className="truncate text-lg font-semibold text-[var(--text)]">{item.title}</h2>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">{formatCreatedAt(item.created_at)}</p>
                   </div>
-                  <p className="mt-1 text-xs text-[#6F6F7D]">{formatCreatedAt(item.created_at)}</p>
-                  <p className="mt-3 text-sm text-[#B8B8C3] whitespace-pre-wrap">{preview(item.body)}</p>
-                </Link>
-              );
-            })
+                  <div className="flex flex-wrap items-center gap-1.5 md:shrink-0 md:justify-end">
+                    <span className={`shrink-0 rounded-lg border px-2 py-1 text-xs ${item.is_read ? "border-[var(--border)] bg-[var(--card-soft)] text-[var(--text-muted)]" : "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"}`}>
+                      {item.is_read ? ANNOUNCEMENT_TEXT.read : ANNOUNCEMENT_TEXT.unread}
+                    </span>
+                    {item.requires_ack && (
+                      <span className={`shrink-0 rounded-lg border px-2 py-1 text-xs ${item.is_acknowledged ? "border-[var(--border)] bg-[var(--card-soft)] text-[var(--text-muted)]" : "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"}`}>
+                        {item.is_acknowledged ? ackDoneBadge : tabUnackLabel}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-2 py-0.5 text-xs text-[var(--text)]">
+                    {ANNOUNCEMENT_TEXT.categoryLabel} {getAnnouncementCategoryLabel(item.category)}
+                  </span>
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${getAnnouncementCategoryBadgeVariant(item.category) === "info" ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]" : "border-[var(--border)] bg-[var(--card-soft)] text-[var(--text)]"}`}>
+                    {ANNOUNCEMENT_TEXT.audienceLabel}{" "}
+                    {item.audience_role === "parent"
+                      ? ANNOUNCEMENT_TEXT.audienceParent
+                      : item.audience_role === "student"
+                        ? ANNOUNCEMENT_TEXT.audienceStudent
+                        : ANNOUNCEMENT_TEXT.audienceAll}
+                  </span>
+                  <span className="inline-flex items-center rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-2 py-0.5 text-xs text-[var(--text)]">
+                    {ANNOUNCEMENT_TEXT.targetLabel} {item.target_summary || ANNOUNCEMENT_TEXT.targetUnknown}
+                  </span>
+                  <span className="inline-flex items-center rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-2 py-0.5 text-xs text-[var(--text)]">
+                    {ANNOUNCEMENT_TEXT.attachmentIconLabel} {item.attachment_count}
+                  </span>
+                </div>
+                <p className="mt-3 whitespace-pre-wrap text-sm text-[var(--text-muted)]">{preview(item.body)}</p>
+              </Link>
+            ))
           )}
         </div>
-      </div>
-    </main>
+      </SectionCard>
+    </PageShell>
   );
 }
