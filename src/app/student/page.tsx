@@ -888,11 +888,11 @@ export default function StudentDashboardPage() {
                   <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-5">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <h3 className="text-base font-semibold text-[var(--text)]">\uD83D\uDD14 \uC54C\uB9BC \uC124\uC815</h3>
+                        <h3 className="text-base font-semibold text-[var(--text)]">{"\uD83D\uDD14 \uC54C\uB9BC \uC124\uC815"}</h3>
                         <p className="mt-1 text-sm text-[var(--text-muted)]">
-                          \uC0C8 \uBBF8\uC158\u00B7\uB9AC\uD3EC\uD2B8\u00B7\uC911\uC694 \uACF5\uC9C0\uB97C \uD478\uC2DC\uB85C \uBC1B\uC544\uBCF4\uC138\uC694.
+                          {"\uC0C8 \uBBF8\uC158\u00B7\uB9AC\uD3EC\uD2B8\u00B7\uC911\uC694 \uACF5\uC9C0\uB97C \uD478\uC2DC\uB85C \uBC1B\uC544\uBCF4\uC138\uC694."}
                           <br />
-                          iPhone\uC740 ''\uD648 \uD654\uBA74\uC5D0 \uCD94\uAC00'' \uD6C4\uC5D0\uB9CC \uC791\uB3D9\uD574\uC694.
+                          {"iPhone\uC740 \u2018\uD648 \uD654\uBA74\uC5D0 \uCD94\uAC00\u2019 \uD6C4\uC5D0\uB9CC \uC791\uB3D9\uD574\uC694."}
                         </p>
                       </div>
                     </div>
