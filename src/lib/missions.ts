@@ -6,7 +6,12 @@ import { evaluateBadgesForStudent } from "@/lib/badges";
 import { getHintAdjustedXp } from "@/lib/missionAnswers";
 import { supabase } from "@/lib/supabaseClient";
 import type {
+  CompareConfig,
+  CompareSubQuestion,
   CurriculumUnit,
+  DragAndDropConfig,
+  FillInBlanksBlank,
+  FillInBlanksConfig,
   GeneratedMission,
   MissionHint,
   MissionAttempt,
@@ -14,6 +19,7 @@ import type {
   MissionSolution,
   MissionSeed,
   MissionStep,
+  SelfExplainConfig,
   StudentMissionStats,
   StudentXpSummary,
   TodayRecommendedMission,
@@ -77,6 +83,12 @@ function parseMissionHints(value: unknown): MissionHint[] | undefined {
   return hints.length > 0 ? hints : undefined;
 }
 
+function extractStringHints(value: unknown): [string?, string?, string?] {
+  if (!Array.isArray(value)) return [];
+  const strings = value.filter((h): h is string => typeof h === "string" && h.trim().length > 0);
+  return [strings[0], strings[1], strings[2]];
+}
+
 function parseMissionSolution(value: unknown): MissionSolution | undefined {
   if (!isObject(value)) return undefined;
   const summary = asString(value.summary);
@@ -87,15 +99,232 @@ function parseMissionSolution(value: unknown): MissionSolution | undefined {
   return { summary, concept, steps, commonMistake };
 }
 
+function parseSelfExplainConfig(value: unknown): SelfExplainConfig | undefined {
+  if (!isObject(value)) return undefined;
+  const question = asString(value.question) ?? asString(value.prompt);
+  const answer = asString(value.answer) ?? asStringOrNumber(value.answer);
+  const explanationPrompt = asString(value.explanationPrompt) ?? asString(value.explanation_prompt);
+  if (!question || !answer || !explanationPrompt) return undefined;
+
+  const rawAnswerType = asString(value.answerType) ?? asString(value.answer_type) ?? "short";
+  const answerType: SelfExplainConfig["answerType"] =
+    rawAnswerType === "multiple_choice" || rawAnswerType === "number" ? rawAnswerType : "short";
+
+  const expectedKeywords = asStringArray(value.expectedKeywords) ?? asStringArray(value.expected_keywords) ?? [];
+  const minKeywordsRaw = value.minKeywords ?? value.min_keywords;
+  const minLengthRaw = value.minLength ?? value.min_length;
+  const minKeywords = typeof minKeywordsRaw === "number" && Number.isFinite(minKeywordsRaw)
+    ? Math.max(0, Math.round(minKeywordsRaw))
+    : Math.min(2, expectedKeywords.length);
+  const minLength = typeof minLengthRaw === "number" && Number.isFinite(minLengthRaw)
+    ? Math.max(0, Math.round(minLengthRaw))
+    : 30;
+  const sampleExplanation = asString(value.sampleExplanation) ?? asString(value.sample_explanation) ?? "";
+  const choices = asStringArray(value.choices);
+
+  return {
+    prompt: asString(value.prompt) ?? undefined,
+    question,
+    answer,
+    answerType,
+    choices,
+    explanationPrompt,
+    expectedKeywords,
+    minKeywords,
+    minLength,
+    sampleExplanation,
+  };
+}
+
+function parseFillInBlanksConfig(value: unknown): FillInBlanksConfig | undefined {
+  if (!isObject(value)) return undefined;
+  const template = asString(value.template);
+  const blanksRaw = Array.isArray(value.blanks) ? value.blanks : null;
+  if (!template || !blanksRaw) return undefined;
+
+  const blanks: FillInBlanksBlank[] = [];
+  for (const entry of blanksRaw) {
+    if (!isObject(entry)) continue;
+    const idRaw = entry.id;
+    const id = typeof idRaw === "number" && Number.isFinite(idRaw)
+      ? Math.round(idRaw)
+      : Number.parseInt(asString(idRaw) ?? "", 10);
+    const answer = asString(entry.answer);
+    if (!Number.isFinite(id) || !answer) continue;
+    blanks.push({
+      id,
+      answer,
+      alternatives: asStringArray(entry.alternatives) ?? [],
+      hint: asString(entry.hint) ?? undefined,
+    });
+  }
+  if (blanks.length === 0) return undefined;
+
+  return {
+    prompt: asString(value.prompt) ?? undefined,
+    template,
+    blanks,
+  };
+}
+
+function parseDragAndDropConfig(value: unknown): DragAndDropConfig | undefined {
+  if (!isObject(value)) return undefined;
+  const rawMode = asString(value.mode);
+  const mode: DragAndDropConfig["mode"] = rawMode === "match" ? "match" : "classify";
+
+  const categories = Array.isArray(value.categories)
+    ? value.categories
+        .map((entry): { id: string; label: string; color?: string } | null => {
+          if (!isObject(entry)) return null;
+          const id = asString(entry.id);
+          const label = asString(entry.label);
+          if (!id || !label) return null;
+          const color = asString(entry.color);
+          return color ? { id, label, color } : { id, label };
+        })
+        .filter((entry): entry is { id: string; label: string; color?: string } => entry !== null)
+    : undefined;
+
+  const items = Array.isArray(value.items)
+    ? value.items
+        .map((entry) => {
+          if (!isObject(entry)) return null;
+          const text = asString(entry.text);
+          const correctCategory = asString(entry.correctCategory) ?? asString(entry.correct_category);
+          if (!text || !correctCategory) return null;
+          return { text, correctCategory };
+        })
+        .filter((entry): entry is { text: string; correctCategory: string } => entry !== null)
+    : undefined;
+
+  const parseColumn = (raw: unknown) =>
+    Array.isArray(raw)
+      ? raw
+          .map((entry) => {
+            if (!isObject(entry)) return null;
+            const id = asString(entry.id);
+            const text = asString(entry.text);
+            if (!id || !text) return null;
+            return { id, text };
+          })
+          .filter((entry): entry is { id: string; text: string } => entry !== null)
+      : undefined;
+
+  const leftColumn = parseColumn(value.leftColumn ?? value.left_column);
+  const rightColumn = parseColumn(value.rightColumn ?? value.right_column);
+
+  const correctPairsRaw = (value.correctPairs ?? value.correct_pairs) as unknown;
+  const correctPairs: Array<[string, string]> | undefined = Array.isArray(correctPairsRaw)
+    ? correctPairsRaw
+        .map((pair): [string, string] | null => {
+          if (!Array.isArray(pair) || pair.length < 2) return null;
+          const a = asString(pair[0]);
+          const b = asString(pair[1]);
+          if (!a || !b) return null;
+          return [a, b];
+        })
+        .filter((pair): pair is [string, string] => pair !== null)
+    : undefined;
+
+  if (mode === "classify" && (!categories || !items)) return undefined;
+  if (mode === "match" && (!leftColumn || !rightColumn || !correctPairs)) return undefined;
+
+  return {
+    prompt: asString(value.prompt) ?? undefined,
+    mode,
+    categories,
+    items,
+    leftColumn,
+    rightColumn,
+    correctPairs,
+  };
+}
+
+function parseCompareConfig(value: unknown): CompareConfig | undefined {
+  if (!isObject(value)) return undefined;
+  const question = asString(value.question);
+  const answersRaw = Array.isArray(value.answers) ? value.answers : null;
+  const subQuestionsRaw = Array.isArray(value.questions) ? value.questions : null;
+  if (!question || !answersRaw || !subQuestionsRaw) return undefined;
+
+  const answers = answersRaw
+    .map((entry) => {
+      if (!isObject(entry)) return null;
+      const id = asString(entry.id);
+      const label = asString(entry.label);
+      if (!id || !label) return null;
+      return {
+        id,
+        label,
+        answer: asString(entry.answer) ?? asStringOrNumber(entry.answer) ?? undefined,
+        work: asString(entry.work) ?? undefined,
+        reasoning: asString(entry.reasoning) ?? undefined,
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+  const subQuestions: CompareSubQuestion[] = [];
+  for (const entry of subQuestionsRaw) {
+    if (!isObject(entry)) continue;
+    const type = asString(entry.type);
+    const prompt = asString(entry.prompt);
+    if (!prompt) continue;
+    if (type === "select_better") {
+      const options = asStringArray(entry.options);
+      const answerRaw = entry.answer;
+      const answer = typeof answerRaw === "number" && Number.isFinite(answerRaw)
+        ? Math.round(answerRaw)
+        : Number.parseInt(asString(answerRaw) ?? "", 10);
+      if (!options || options.length === 0 || !Number.isFinite(answer)) continue;
+      subQuestions.push({ type: "select_better", prompt, options, answer });
+    } else if (type === "explain") {
+      const expectedKeywords = asStringArray(entry.expectedKeywords) ?? asStringArray(entry.expected_keywords) ?? [];
+      const minKeywordsRaw = entry.minKeywords ?? entry.min_keywords;
+      const minLengthRaw = entry.minLength ?? entry.min_length;
+      const minKeywords = typeof minKeywordsRaw === "number" && Number.isFinite(minKeywordsRaw)
+        ? Math.max(0, Math.round(minKeywordsRaw))
+        : Math.min(2, expectedKeywords.length);
+      const minLength = typeof minLengthRaw === "number" && Number.isFinite(minLengthRaw)
+        ? Math.max(0, Math.round(minLengthRaw))
+        : 30;
+      subQuestions.push({ type: "explain", prompt, expectedKeywords, minKeywords, minLength });
+    }
+  }
+
+  if (answers.length === 0 || subQuestions.length === 0) return undefined;
+
+  return {
+    prompt: asString(value.prompt) ?? undefined,
+    passage: asString(value.passage) ?? undefined,
+    question,
+    answers,
+    questions: subQuestions,
+  };
+}
+
 function parseMissionStep(value: unknown): MissionStep | null {
   if (!isObject(value)) return null;
 
   const stepOrder = typeof value.stepOrder === "number" ? value.stepOrder : value.step_order;
   const title = asString(value.title);
-  const stepType = asString(value.stepType) ?? asString(value.type);
+  // Normalize legacy/alternate type names to canonical internal types
+  const rawStepType = asString(value.stepType) ?? asString(value.step_type) ?? asString(value.type);
+  const stepType =
+    rawStepType === "multiple_choice" ? "choice" :
+    rawStepType === "short_answer" ? "input" :
+    rawStepType === "concept_check" || rawStepType === "concept_summary" ? "concept" :
+    rawStepType === "free_response" || rawStepType === "paragraph" ||
+    rawStepType === "paragraph_response" || rawStepType === "scenario_response" ? "writing" :
+    rawStepType === "classification" ? "drag_and_drop" :
+    rawStepType;
   if (typeof stepOrder !== "number" || !Number.isFinite(stepOrder)) return null;
   if (!title) return null;
-  if (stepType !== "intro" && stepType !== "input" && stepType !== "choice" && stepType !== "multi_select" && stepType !== "concept") return null;
+  if (
+    stepType !== "intro" && stepType !== "input" && stepType !== "choice" &&
+    stepType !== "multi_select" && stepType !== "concept" && stepType !== "writing" &&
+    stepType !== "self_explain" && stepType !== "fill_in_blanks" &&
+    stepType !== "drag_and_drop" && stepType !== "compare"
+  ) return null;
 
   const choicesRaw = value.choices ?? value.options;
   const choices = Array.isArray(choicesRaw)
@@ -112,6 +341,26 @@ function parseMissionStep(value: unknown): MissionStep | null {
     .filter((item): item is number => typeof item === "number" && Number.isFinite(item))
     .map((item) => Math.max(0, Math.round(item)));
 
+  // For choice steps, correctAnswer must be the text of one of the choices (not an index).
+  // If stored as a numeric index (e.g. correctAnswer: 2), resolve it to choices[2].
+  // If still unresolvable, fall back to correctChoiceIndexes[0] as a last resort.
+  const rawCorrectAnswer = asStringOrNumber(value.correctAnswer) ?? asStringOrNumber(value.correct_answer) ?? undefined;
+  const resolvedCorrectAnswer: string | undefined = (() => {
+    if (stepType !== "choice" || !choices) return rawCorrectAnswer;
+    if (rawCorrectAnswer !== undefined) {
+      if (choices.includes(rawCorrectAnswer)) return rawCorrectAnswer;
+      const numericIndex = Number(rawCorrectAnswer);
+      if (Number.isInteger(numericIndex) && numericIndex >= 0 && numericIndex < choices.length) {
+        return choices[numericIndex];
+      }
+    }
+    if (correctChoiceIndexes.length > 0) {
+      const idx = correctChoiceIndexes[0];
+      if (idx >= 0 && idx < choices.length) return choices[idx];
+    }
+    return rawCorrectAnswer;
+  })();
+
   return {
     stepOrder: Math.max(1, Math.round(stepOrder)),
     title,
@@ -122,7 +371,7 @@ function parseMissionStep(value: unknown): MissionStep | null {
     answerType: ["number", "text", "equation"].includes(asString(value.answerType) ?? asString(value.answer_type) ?? "")
       ? ((asString(value.answerType) ?? asString(value.answer_type)) as MissionStep["answerType"])
       : undefined,
-    correctAnswer: asStringOrNumber(value.correctAnswer) ?? asStringOrNumber(value.correct_answer) ?? undefined,
+    correctAnswer: resolvedCorrectAnswer,
     acceptedAnswers: asStringArray(value.acceptedAnswers) ?? asStringArray(value.accepted_answers),
     acceptedUnits: asStringArray(value.acceptedUnits) ?? asStringArray(value.accepted_units),
     choices,
@@ -137,6 +386,19 @@ function parseMissionStep(value: unknown): MissionStep | null {
     feedbackIncorrect: asString(value.feedbackIncorrect) ?? undefined,
     conceptTitle: asString(value.conceptTitle) ?? undefined,
     conceptDescription: asString(value.conceptDescription) ?? undefined,
+    // Writing-step fields (populated when stepType === "writing")
+    expectedSentenceCount: (() => {
+      const raw = value.expectedSentenceCount ?? value.expected_sentence_count;
+      return typeof raw === "number" && Number.isFinite(raw) ? Math.max(1, Math.round(raw)) : undefined;
+    })(),
+    writingGuide: asStringArray(value.writingGuide) ?? asStringArray(value.writing_guide) ?? undefined,
+    sampleAnswer: asString(value.sampleAnswer) ?? asString(value.sample_answer) ?? undefined,
+    keyExpressions: asStringArray(value.keyExpressions) ?? asStringArray(value.key_expressions) ?? undefined,
+    commonMistakes: asStringArray(value.commonMistakes) ?? asStringArray(value.common_mistakes) ?? undefined,
+    selfExplain: stepType === "self_explain" ? parseSelfExplainConfig(value.selfExplain ?? value.self_explain ?? value) : undefined,
+    fillInBlanks: stepType === "fill_in_blanks" ? parseFillInBlanksConfig(value.fillInBlanks ?? value.fill_in_blanks ?? value) : undefined,
+    dragAndDrop: stepType === "drag_and_drop" ? parseDragAndDropConfig(value.dragAndDrop ?? value.drag_and_drop ?? value) : undefined,
+    compare: stepType === "compare" ? parseCompareConfig(value.compare ?? value) : undefined,
   };
 }
 
@@ -415,6 +677,20 @@ export type MissionCompletionFeedback = {
     summary: string;
   }>;
   newlyEarnedBadges: EarnedBadgeSummary[];
+  // from process_mission_complete RPC
+  level: number;
+  prevLevel: number;
+  leveledUp: boolean;
+  xpToNextLevel: number;
+  totalXp: number;
+  streak: number;
+  // 재도전(연습 모드) 표시. true면 XP/배지/레벨 변화 없음.
+  isPractice: boolean;
+  firstClearedAt: string | null;
+  // RPC가 알려주는 XP 분해. 힌트 차감 표시에 사용.
+  baseXp: number;
+  bonusXp: number;
+  hintPenaltyPct: number;
 };
 
 type MissionStepAttemptSummaryRow = {
@@ -494,7 +770,15 @@ function getSeedMissionStepCount(missionId: string): number {
 }
 
 function isGradableMissionStep(step: MissionStep): boolean {
-  return step.stepType === "choice" || step.stepType === "input" || step.stepType === "multi_select";
+  return (
+    step.stepType === "choice" ||
+    step.stepType === "input" ||
+    step.stepType === "multi_select" ||
+    step.stepType === "self_explain" ||
+    step.stepType === "fill_in_blanks" ||
+    step.stepType === "drag_and_drop" ||
+    step.stepType === "compare"
+  );
 }
 
 function roundRatio(value: number): number {
@@ -509,7 +793,12 @@ function buildMissionCompletionFeedback(args: {
   hintUsedCount: number;
   earnedXp: number;
   incorrectStepSummaries: MissionCompletionFeedback["incorrectStepSummaries"];
-}): MissionCompletionFeedback {
+  isPractice?: boolean;
+  firstClearedAt?: string | null;
+  baseXp?: number;
+  bonusXp?: number;
+  hintPenaltyPct?: number;
+}): Omit<MissionCompletionFeedback, 'level' | 'prevLevel' | 'leveledUp' | 'xpToNextLevel' | 'totalXp' | 'streak'> {
   let strengthMessage = "\uD55C \uBC88 \uB354 \uD480\uBA74 \uC2E4\uB825\uC774 \uB354 \uC548\uC815\uB420 \uC218 \uC788\uC5B4\uC694.";
   let reviewMessage = "\uD2C0\uB9B0 \uB2E8\uACC4 \uD574\uC124\uC744 \uB2E4\uC2DC \uC77D\uACE0 \uC720\uC0AC\uD55C \uBB38\uC81C\uB97C \uD55C \uBC88 \uB354 \uC5F0\uC2B5\uD574 \uBCF4\uC138\uC694.";
 
@@ -543,6 +832,11 @@ function buildMissionCompletionFeedback(args: {
     reviewMessage,
     incorrectStepSummaries: args.incorrectStepSummaries,
     newlyEarnedBadges: [],
+    isPractice: args.isPractice ?? false,
+    firstClearedAt: args.firstClearedAt ?? null,
+    baseXp: args.baseXp ?? args.earnedXp,
+    bonusXp: args.bonusXp ?? 0,
+    hintPenaltyPct: args.hintPenaltyPct ?? 0,
   };
 }
 
@@ -756,8 +1050,29 @@ function unitCardSort(a: CurriculumUnit, b: CurriculumUnit): number {
   return a.unit_name.localeCompare(b.unit_name, "ko");
 }
 
-export async function fetchMathHomeGradeUnits(grade: number): Promise<MathHomeUnitCard[]> {
-  const units = (await fetchCurriculumUnits(grade, "math")).filter((unit) => unit.school_level !== "high");
+export async function fetchMathHomeGradeUnits(
+  grade: number,
+  schoolLevel?: string
+): Promise<MathHomeUnitCard[]> {
+  let query = supabase
+    .from("curriculum_units")
+    .select(
+      "id, school_level, grade, unit_key, unit_name, description, concept_summary, display_order, is_active, subject"
+    )
+    .eq("subject", "math")
+    .eq("is_active", true)
+    .eq("grade", grade)
+    .order("display_order", { ascending: true })
+    .order("unit_name", { ascending: true });
+
+  if (schoolLevel) {
+    query = query.eq("school_level", schoolLevel);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  const units = (data ?? []) as CurriculumUnit[];
   if (units.length === 0) return [];
 
   const summaryByUnit = await getVisibleMissionCountByUnit(units.map((unit) => unit.id), "math");
@@ -809,6 +1124,30 @@ export async function fetchMathCareerMissions(limit = 12): Promise<GeneratedMiss
   if (error) throw error;
   return (data ?? []).map(mapGeneratedMissionRow).filter((row): row is GeneratedMission => row !== null);
 }
+
+export async function fetchMissionsByCategory(
+  category: string | null,
+  subject: "math" | "english" = "math",
+  limit = 6
+): Promise<GeneratedMission[]> {
+  let query = supabase
+    .from("v_missions_by_category")
+    .select(GENERATED_MISSION_SELECT)
+    .eq("subject", subject)
+    .order("published_at", { ascending: false })
+    .limit(limit);
+
+  if (category !== null) {
+    query = query.eq("main_category", category);
+  } else {
+    query = query.neq("main_category", "other");
+  }
+
+  const { data, error } = await query.returns<GeneratedMissionRow[]>();
+  if (error) throw error;
+  return (data ?? []).map(mapGeneratedMissionRow).filter((row): row is GeneratedMission => row !== null);
+}
+
 export async function fetchPublishedMissionsByUnit(unitId: string, subject: "math" | "english" = "math"): Promise<GeneratedMission[]> {
   const rawRows = await getVisibleMissionsByUnit(unitId, subject);
   const parsedRows = rawRows.map((row) => ({
@@ -846,6 +1185,24 @@ export async function fetchPublishedMissions(limit = 24, subject: "math" | "engl
   return (data ?? []).map(mapGeneratedMissionRow).filter((row): row is GeneratedMission => row !== null);
 }
 
+export async function fetchPublishedWeekendMissions(
+  subject: "weekend_creative" | "weekend_character",
+  limit = 20
+): Promise<GeneratedMission[]> {
+  const { data, error } = await supabase
+    .from("generated_missions")
+    .select(GENERATED_MISSION_SELECT)
+    .eq("subject", subject)
+    .eq("status", "published")
+    .eq("is_active", true)
+    .not("published_at", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(limit)
+    .returns<GeneratedMissionRow[]>();
+  if (error) throw error;
+  return (data ?? []).map(mapGeneratedMissionRow).filter((row): row is GeneratedMission => row !== null);
+}
+
 export async function fetchMissionById(missionId: string): Promise<GeneratedMission | null> {
   const { data, error } = await buildVisibleGeneratedMissionsQuery(GENERATED_MISSION_SELECT, {
     missionId,
@@ -862,6 +1219,27 @@ export async function fetchMissionById(missionId: string): Promise<GeneratedMiss
       status: data.status,
       isActive: data.is_active,
       publishedAt: data.published_at,
+    });
+  }
+  return mapped;
+}
+
+export async function fetchAnyMissionById(missionId: string): Promise<GeneratedMission | null> {
+  const { data, error } = await supabase
+    .from("generated_missions")
+    .select(GENERATED_MISSION_SELECT)
+    .eq("id", missionId)
+    .maybeSingle<GeneratedMissionRow>();
+  if (error) throw error;
+  if (!data) return null;
+  const mapped = mapGeneratedMissionRow(data);
+  if (!mapped) {
+    console.warn("[missions] fetchAnyMissionById payload normalization failed", {
+      missionId,
+      subject: data.subject,
+      title: data.title,
+      status: data.status,
+      isActive: data.is_active,
     });
   }
   return mapped;
@@ -900,7 +1278,8 @@ async function insertMissionAttemptWithFallback(args: {
   missionId: string;
 }): Promise<MissionAttempt> {
   const mission = await fetchMissionById(args.missionId);
-  const totalSteps = mission?.mission_json.steps.length ?? getSeedMissionStepCount(args.missionId);
+  const missionJson = mission?.mission_json as ({ activities?: unknown[]; steps?: unknown[] }) | undefined;
+  const totalSteps = missionJson?.activities?.length ?? missionJson?.steps?.length ?? getSeedMissionStepCount(args.missionId);
   const attemptPayload = {
     student_id: args.studentId,
     mission_id: args.missionId,
@@ -942,6 +1321,7 @@ async function insertMissionAttemptWithFallback(args: {
 function parseLegacyActivityStep(value: unknown, index: number): MissionStep | null {
   if (!isObject(value)) return null;
 
+  const [strHint1, strHint2, strHint3] = extractStringHints(value.hints);
   const rawType = asString(value.type);
   const prompt = asString(value.prompt);
   const explanation = asString(value.explanation);
@@ -956,11 +1336,40 @@ function parseLegacyActivityStep(value: unknown, index: number): MissionStep | n
     : Array.isArray(value.answer)
       ? value.answer.filter((item): item is number => typeof item === "number" && Number.isFinite(item)).map((item) => Math.max(0, Math.round(item)))
       : [];
+  const writingGuide = Array.isArray(value.writingGuide)
+    ? value.writingGuide.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : Array.isArray(value.writing_guide)
+      ? value.writing_guide.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      : Array.isArray(value.guide)
+        ? value.guide.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        : undefined;
+  const keyExpressions = Array.isArray(value.keyExpressions)
+    ? value.keyExpressions.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : Array.isArray(value.key_expressions)
+      ? value.key_expressions.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      : undefined;
+  const commonMistakes = Array.isArray(value.commonMistakes)
+    ? value.commonMistakes.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : Array.isArray(value.common_mistakes)
+      ? value.common_mistakes.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      : undefined;
+  const expectedSentenceCountRaw = value.expectedSentenceCount ?? value.expected_sentence_count;
+  const expectedSentenceCount =
+    typeof expectedSentenceCountRaw === "number" && Number.isFinite(expectedSentenceCountRaw)
+      ? Math.max(1, Math.round(expectedSentenceCountRaw))
+      : undefined;
 
-  if (rawType === "choice") {
-    const answerIndex = typeof value.answer === "number" && Number.isFinite(value.answer) ? value.answer : null;
+  if (rawType === "choice" || rawType === "multiple_choice") {
+    const rawAnswer = value.answer;
+    const numericIndex = typeof rawAnswer === "number" && Number.isFinite(rawAnswer)
+      ? rawAnswer
+      : typeof rawAnswer === "string" && /^\d+$/.test(rawAnswer.trim())
+        ? parseInt(rawAnswer.trim(), 10)
+        : null;
     const correctAnswer =
-      answerIndex !== null && options && options[answerIndex] ? options[answerIndex] : asStringOrNumber(value.answer);
+      numericIndex !== null && options && options[numericIndex] != null
+        ? options[numericIndex]
+        : asStringOrNumber(rawAnswer);
 
     return {
       stepOrder: index + 1,
@@ -971,9 +1380,9 @@ function parseLegacyActivityStep(value: unknown, index: number): MissionStep | n
       choices: options,
       correctAnswer: correctAnswer ?? undefined,
       acceptedAnswers,
-      hintLevel1: asString(value.hintLevel1) ?? asString(value.hint_level1) ?? undefined,
-      hintLevel2: asString(value.hintLevel2) ?? asString(value.hint_level2) ?? undefined,
-      hintLevel3: asString(value.hintLevel3) ?? asString(value.hint_level3) ?? undefined,
+      hintLevel1: asString(value.hintLevel1) ?? asString(value.hint_level1) ?? strHint1 ?? undefined,
+      hintLevel2: asString(value.hintLevel2) ?? asString(value.hint_level2) ?? strHint2 ?? undefined,
+      hintLevel3: asString(value.hintLevel3) ?? asString(value.hint_level3) ?? strHint3 ?? undefined,
       hints: parseMissionHints(value.hints),
       solution: parseMissionSolution(value.solution),
     };
@@ -989,9 +1398,9 @@ function parseLegacyActivityStep(value: unknown, index: number): MissionStep | n
       choices: options,
       correctChoiceIndexes: answerIndexes.length > 0 ? Array.from(new Set(answerIndexes)) : undefined,
       acceptedAnswers,
-      hintLevel1: asString(value.hintLevel1) ?? asString(value.hint_level1) ?? undefined,
-      hintLevel2: asString(value.hintLevel2) ?? asString(value.hint_level2) ?? undefined,
-      hintLevel3: asString(value.hintLevel3) ?? asString(value.hint_level3) ?? undefined,
+      hintLevel1: asString(value.hintLevel1) ?? asString(value.hint_level1) ?? strHint1 ?? undefined,
+      hintLevel2: asString(value.hintLevel2) ?? asString(value.hint_level2) ?? strHint2 ?? undefined,
+      hintLevel3: asString(value.hintLevel3) ?? asString(value.hint_level3) ?? strHint3 ?? undefined,
       hints: parseMissionHints(value.hints),
       solution: parseMissionSolution(value.solution),
     };
@@ -1008,19 +1417,46 @@ function parseLegacyActivityStep(value: unknown, index: number): MissionStep | n
       correctAnswer: asStringOrNumber(value.answer) ?? undefined,
       acceptedAnswers,
       inputPlaceholder: asString(value.placeholder) ?? undefined,
-      hintLevel1: asString(value.hintLevel1) ?? asString(value.hint_level1) ?? undefined,
-      hintLevel2: asString(value.hintLevel2) ?? asString(value.hint_level2) ?? undefined,
-      hintLevel3: asString(value.hintLevel3) ?? asString(value.hint_level3) ?? undefined,
+      hintLevel1: asString(value.hintLevel1) ?? asString(value.hint_level1) ?? strHint1 ?? undefined,
+      hintLevel2: asString(value.hintLevel2) ?? asString(value.hint_level2) ?? strHint2 ?? undefined,
+      hintLevel3: asString(value.hintLevel3) ?? asString(value.hint_level3) ?? strHint3 ?? undefined,
       hints: parseMissionHints(value.hints),
       solution: parseMissionSolution(value.solution),
     };
   }
 
-  if (rawType === "scenario_response" || rawType === "concept") {
-    const guide = Array.isArray(value.guide)
-      ? value.guide.filter((item): item is string => typeof item === "string" && item.trim().length > 0).join("\n")
-      : "";
+  if (
+    rawType === "writing" ||
+    rawType === "free_response" ||
+    rawType === "paragraph" ||
+    rawType === "paragraph_response" ||
+    rawType === "scenario_response"
+  ) {
+    return {
+      stepOrder: index + 1,
+      title,
+      stepType: "writing",
+      question: prompt ?? undefined,
+      explanation: explanation ?? undefined,
+      answerType: "writing",
+      inputPlaceholder: asString(value.placeholder) ?? asString(value.inputPlaceholder) ?? undefined,
+      expectedSentenceCount,
+      writingGuide,
+      sampleAnswer: asString(value.sampleAnswer) ?? asString(value.sample_answer) ?? undefined,
+      keyExpressions,
+      commonMistakes,
+      hintLevel1: asString(value.hintLevel1) ?? asString(value.hint_level1) ?? strHint1 ?? undefined,
+      hintLevel2: asString(value.hintLevel2) ?? asString(value.hint_level2) ?? strHint2 ?? undefined,
+      hintLevel3: asString(value.hintLevel3) ?? asString(value.hint_level3) ?? strHint3 ?? undefined,
+      hints: parseMissionHints(value.hints),
+      solution: parseMissionSolution(value.solution),
+      feedbackCorrect: asString(value.feedbackCorrect) ?? asString(value.feedback_correct) ?? undefined,
+      feedbackIncorrect: asString(value.feedbackIncorrect) ?? asString(value.feedback_incorrect) ?? undefined,
+    };
+  }
 
+  if (rawType === "concept") {
+    const guide = writingGuide?.join("\n") ?? "";
     return {
       stepOrder: index + 1,
       title,
@@ -1217,6 +1653,30 @@ export async function completeMissionAttempt(payload: CompleteMissionAttemptPayl
   if (error) throw error;
 }
 
+type ProcessMissionCompleteResult = {
+  xp_earned: number;
+  total_xp: number;
+  level: number;
+  prev_level: number;
+  leveled_up: boolean;
+  xp_to_next: number;
+  new_badges: Array<{
+    key: string;
+    title: string;
+    description: string;
+    iconUrl: string | null;
+    subject: string;
+    earnedAt: string;
+  }>;
+  streak: number;
+  // 힌트 차감 정보 (RPC가 새로 반환). 옛 응답엔 없을 수 있어 optional.
+  base_xp?: number | null;
+  bonus_xp?: number | null;
+  hint_used_count?: number | null;
+  hint_penalty?: number | null;
+  hint_penalty_pct?: number | null;
+};
+
 export async function completeMissionAttemptWithFeedback(args: {
   attemptId: string;
   missionId: string;
@@ -1227,32 +1687,6 @@ export async function completeMissionAttemptWithFeedback(args: {
   const me = await getCurrentStudentIdentity();
   const mission = await fetchMissionById(args.missionId);
 
-  const { data: attemptRow, error: attemptError } = await supabase
-    .from("mission_attempts")
-    .select("id,student_id,mission_id,started_at,status,total_steps,correct_steps,score,duration_sec")
-    .eq("id", args.attemptId)
-    .eq("student_id", me.id)
-    .maybeSingle<{
-      id: string;
-      student_id: string;
-      mission_id: string;
-      started_at: string;
-      status: MissionAttempt["status"];
-      total_steps: number | null;
-      correct_steps: number | null;
-      score: number | null;
-      duration_sec: number | null;
-    }>();
-  if (attemptError) {
-    console.error("completeMissionAttemptWithFeedback step failed", { stage: "load_attempt", error: attemptError });
-    throw attemptError;
-  }
-  if (!attemptRow) {
-    const missingAttemptError = new Error("Mission attempt not found.");
-    console.error("completeMissionAttemptWithFeedback step failed", { stage: "load_attempt", error: missingAttemptError, attemptId: args.attemptId });
-    throw missingAttemptError;
-  }
-
   const { data: stepAttempts, error: stepAttemptsError } = await supabase
     .from("mission_step_attempts")
     .select("step_order,student_answer,is_correct,hint_used,answered_at,student_id")
@@ -1262,14 +1696,6 @@ export async function completeMissionAttemptWithFeedback(args: {
     console.error("completeMissionAttemptWithFeedback step failed", { stage: "load_step_attempts", error: stepAttemptsError });
     throw stepAttemptsError;
   }
-
-  console.info("completeMissionAttemptWithFeedback step", {
-    stage: "calculate_feedback",
-    missionId: args.missionId,
-    attemptId: args.attemptId,
-    studentId: me.id,
-    stepAttemptCount: (stepAttempts ?? []).length,
-  });
 
   const stepAttemptMap = new Map((stepAttempts ?? []).map((row) => [row.step_order, row]));
   const gradableSteps = args.steps.filter(isGradableMissionStep);
@@ -1287,110 +1713,156 @@ export async function completeMissionAttemptWithFeedback(args: {
     }))
     .slice(0, 3);
 
-  const now = new Date();
-  const nowIso = now.toISOString();
-  const durationSec = getAttemptDurationSeconds(attemptRow.started_at, now);
   const score = Math.round(accuracy * 100);
-  const baseXp = mission ? xpForMissionDifficulty(mission.difficulty) : 0;
-  const earnedXp = getHintAdjustedXp(baseXp, hintUsedCount);
+  const subject = mission?.subject ?? "math";
+  const difficulty = mission?.difficulty ?? "normal";
+  const unitId = mission?.unit_id ?? args.unitId ?? null;
 
-  const modernUpdateRes = await supabase
+  // 재도전 감지: 같은 학생이 이 미션을 이전에 완료한 적이 있다면 XP 재지급 차단.
+  // DB의 student_xp_log UNIQUE INDEX(student_id, mission_id) WHERE reason='mission_complete'
+  // 와 동일한 의도로, 첫 완료된 mission_attempts를 단일 진실 소스로 사용한다.
+  const priorRes = await supabase
     .from("mission_attempts")
-    .update({
-      status: "completed",
-      completed_at: nowIso,
-      total_steps: args.steps.length,
-      correct_steps: correctSteps,
-      score,
-      duration_sec: durationSec,
-      subject: mission?.subject ?? null,
-      unit_id: mission?.unit_id ?? args.unitId ?? null,
-      xp_earned: earnedXp,
-      updated_at: nowIso,
-    })
-    .eq("id", args.attemptId)
-    .eq("student_id", me.id);
-  if (modernUpdateRes.error && !isMissingColumnError(modernUpdateRes.error)) {
-    console.error("completeMissionAttemptWithFeedback step failed", { stage: "update_attempt", error: modernUpdateRes.error });
-    throw modernUpdateRes.error;
-  }
-  if (modernUpdateRes.error && isMissingColumnError(modernUpdateRes.error)) {
-    const legacyUpdateRes = await supabase
-      .from("mission_attempts")
-      .update({
-        status: "completed",
-        completed_at: nowIso,
-        total_steps: args.steps.length,
-        correct_steps: correctSteps,
-        score,
-        duration_sec: durationSec,
-        updated_at: nowIso,
-      })
-      .eq("id", args.attemptId)
-      .eq("student_id", me.id);
-    if (legacyUpdateRes.error) {
-      console.error("completeMissionAttemptWithFeedback step failed", { stage: "update_attempt", error: legacyUpdateRes.error });
-      throw legacyUpdateRes.error;
-    }
+    .select("id, completed_at, xp_earned")
+    .eq("student_id", me.id)
+    .eq("mission_id", args.missionId)
+    .eq("status", "completed")
+    .neq("id", args.attemptId)
+    .order("completed_at", { ascending: true })
+    .limit(1)
+    .maybeSingle<{ id: string; completed_at: string | null; xp_earned: number | null }>();
+  if (priorRes.error) {
+    console.error("completeMissionAttemptWithFeedback step failed", { stage: "prior_lookup", error: priorRes.error });
+    throw priorRes.error;
   }
 
-  let newlyEarnedBadges: EarnedBadgeSummary[] = [];
-
-  if (mission && (mission.subject === "english" || mission.subject === "math")) {
-    try {
-      console.info("completeMissionAttemptWithFeedback step", {
-        stage: "update_badges",
-        missionId: args.missionId,
-        attemptId: args.attemptId,
-        studentId: me.id,
-        subject: mission.subject,
-      });
-      newlyEarnedBadges = await evaluateBadgesForStudent({
-        studentId: me.id,
-        relatedMissionId: args.missionId,
-        subject: mission.subject,
-      });
-    } catch (badgeError) {
-      console.warn("completeMissionAttemptWithFeedback step failed", { stage: "update_badges", error: badgeError });
-    }
+  if (priorRes.data) {
+    // 연습 모드: 현재 시도는 이력 보존을 위해 'completed'로 마감만 하고 XP는 지급하지 않는다.
+    await completeMissionAttempt({
+      attemptId: args.attemptId,
+      correctSteps,
+      totalSteps: args.steps.length,
+    });
+    const practiceFeedback = buildMissionCompletionFeedback({
+      accuracy: roundRatio(accuracy),
+      correctSteps,
+      totalSteps: args.steps.length,
+      gradableSteps: gradableSteps.length,
+      hintUsedCount,
+      earnedXp: 0,
+      incorrectStepSummaries,
+      isPractice: true,
+      firstClearedAt: priorRes.data.completed_at,
+    });
+    return {
+      ...practiceFeedback,
+      newlyEarnedBadges: [],
+      level: 0,
+      prevLevel: 0,
+      leveledUp: false,
+      xpToNextLevel: 0,
+      totalXp: 0,
+      streak: 0,
+    };
   }
 
-  if (args.unitId) {
-    try {
-      console.info("completeMissionAttemptWithFeedback step", {
-        stage: "update_mastery",
-        missionId: args.missionId,
-        attemptId: args.attemptId,
-        studentId: me.id,
-        unitId: args.unitId,
-      });
-      await updateStudentMasterySummary({
-        studentId: me.id,
-        unitId: args.unitId,
-        accuracy,
-        durationSec,
+  const { data: rpcData, error: rpcError } = await supabase.rpc("process_mission_complete", {
+    p_student_id:      me.id,
+    p_attempt_id:      args.attemptId,
+    p_mission_id:      args.missionId,
+    p_subject:         subject,
+    p_difficulty:      difficulty,
+    p_score:           score,
+    p_correct_steps:   correctSteps,
+    p_total_steps:     args.steps.length,
+    p_hint_used_count: hintUsedCount,
+    p_unit_id:         unitId,
+  }).returns<ProcessMissionCompleteResult>();
+
+  if (rpcError) {
+    // 동시 요청으로 인한 race: DB UNIQUE 제약이 23505로 거부한 경우 연습 모드로 안전 폴백.
+    if ((rpcError as { code?: string }).code === "23505") {
+      const racePriorRes = await supabase
+        .from("mission_attempts")
+        .select("completed_at")
+        .eq("student_id", me.id)
+        .eq("mission_id", args.missionId)
+        .eq("status", "completed")
+        .neq("id", args.attemptId)
+        .order("completed_at", { ascending: true })
+        .limit(1)
+        .maybeSingle<{ completed_at: string | null }>();
+      const fallback = buildMissionCompletionFeedback({
+        accuracy: roundRatio(accuracy),
         correctSteps,
+        totalSteps: args.steps.length,
         gradableSteps: gradableSteps.length,
-        attemptedAt: nowIso,
+        hintUsedCount,
+        earnedXp: 0,
+        incorrectStepSummaries,
+        isPractice: true,
+        firstClearedAt: racePriorRes.data?.completed_at ?? null,
       });
-    } catch (masteryError) {
-      console.warn("completeMissionAttemptWithFeedback step failed", { stage: "update_mastery", error: masteryError });
+      return {
+        ...fallback,
+        newlyEarnedBadges: [],
+        level: 0,
+        prevLevel: 0,
+        leveledUp: false,
+        xpToNextLevel: 0,
+        totalXp: 0,
+        streak: 0,
+      };
     }
+    console.error("completeMissionAttemptWithFeedback step failed", { stage: "rpc", error: rpcError });
+    throw rpcError;
   }
 
+  const result = rpcData as ProcessMissionCompleteResult;
+  const newlyEarnedBadges: EarnedBadgeSummary[] = (result.new_badges ?? []).map((b) => ({
+    key: b.key as EarnedBadgeSummary["key"],
+    subject: b.subject as EarnedBadgeSummary["subject"],
+    title: b.title,
+    name: b.title,
+    description: b.description,
+    category: "" as EarnedBadgeSummary["category"],
+    iconUrl: b.iconUrl ?? "",
+    conditionType: "" as EarnedBadgeSummary["conditionType"],
+    conditionValue: 0,
+    isActive: true,
+    badgeId: null,
+    earnedAt: b.earnedAt,
+    relatedMissionId: args.missionId,
+    progressValue: 0,
+    targetValue: 0,
+    progressPercent: 100,
+    state: "earned" as const,
+  }));
+
+  const earnedXp = result.xp_earned ?? 0;
+  const rpcHintCount = typeof result.hint_used_count === "number" ? result.hint_used_count : hintUsedCount;
   const feedback = buildMissionCompletionFeedback({
     accuracy: roundRatio(accuracy),
     correctSteps,
     totalSteps: args.steps.length,
     gradableSteps: gradableSteps.length,
-    hintUsedCount,
+    hintUsedCount: rpcHintCount,
     earnedXp,
     incorrectStepSummaries,
+    baseXp: result.base_xp ?? earnedXp,
+    bonusXp: result.bonus_xp ?? 0,
+    hintPenaltyPct: result.hint_penalty_pct ?? 0,
   });
 
   return {
     ...feedback,
     newlyEarnedBadges,
+    level: result.level ?? 1,
+    prevLevel: result.prev_level ?? 1,
+    leveledUp: result.leveled_up ?? false,
+    xpToNextLevel: result.xp_to_next ?? 0,
+    totalXp: result.total_xp ?? 0,
+    streak: result.streak ?? 0,
   };
 }
 function displayInlineTextForFeedback(value: string): string {
@@ -1418,6 +1890,69 @@ export async function getTodayCompletedMissionIds(): Promise<string[]> {
     .returns<Array<{ mission_id: string }>>();
   if (error) throw error;
   return Array.from(new Set((data ?? []).map((row) => row.mission_id)));
+}
+
+// level_definitions에서 특정 레벨에 매핑된 캐릭터 키를 가져온다.
+// DB에 row가 없거나 컬럼이 비어 있으면 null. 호출부에서 fallback 처리.
+export async function getLevelCharacterKey(level: number): Promise<string | null> {
+  if (!Number.isFinite(level) || level <= 0) return null;
+  const { data, error } = await supabase
+    .from("level_definitions")
+    .select("character_key")
+    .eq("level", Math.floor(level))
+    .maybeSingle<{ character_key: string | null }>();
+  if (error) {
+    console.warn("getLevelCharacterKey failed", error);
+    return null;
+  }
+  return data?.character_key ?? null;
+}
+
+// 미션 완료 결과(점수 + 힌트 사용)에 맞춰 캐릭터 키와 응원 메시지를 고른다.
+// 화면에서는 Character 컴포넌트로 렌더한다.
+export function pickCompletionCharacter(args: {
+  accuracy: number;
+  hintUsedCount: number;
+  isPractice?: boolean;
+}): { key: string; message: string } {
+  if (args.isPractice) {
+    return { key: "mv_reading", message: "연습 완료! 꾸준한 노력이 중요해요 📚" };
+  }
+  const score = Math.round(args.accuracy * 100);
+  if (score >= 100 && args.hintUsedCount === 0) {
+    return { key: "mv_touched", message: "완벽해요! 정말 대단합니다 ✨" };
+  }
+  if (score >= 100) {
+    return { key: "mv_excited", message: "잘했어요! 다음엔 힌트 없이도 도전!" };
+  }
+  if (score >= 80) {
+    return { key: "mv_wink", message: "잘 풀었어요! 조금만 더 힘내요" };
+  }
+  if (score >= 50) {
+    return { key: "mv_cheer", message: "괜찮아요! 다시 도전하면 돼요" };
+  }
+  return { key: "mv_comfort", message: "힘들었죠? 한 단계씩 천천히 해봐요" };
+}
+
+// 학생이 특정 미션을 이전에 완료한 적 있는지(=재도전 시 XP 미지급) 확인.
+// 존재하면 첫 완료 시각을 함께 반환한다.
+export async function getMissionFirstClearForStudent(
+  missionId: string
+): Promise<{ firstClearedAt: string | null } | null> {
+  if (!missionId) return null;
+  const me = await getCurrentStudentIdentity();
+  const { data, error } = await supabase
+    .from("mission_attempts")
+    .select("completed_at")
+    .eq("student_id", me.id)
+    .eq("mission_id", missionId)
+    .eq("status", "completed")
+    .order("completed_at", { ascending: true })
+    .limit(1)
+    .maybeSingle<{ completed_at: string | null }>();
+  if (error) throw error;
+  if (!data) return null;
+  return { firstClearedAt: data.completed_at };
 }
 
 export function calculateStreak(completedDates: string[]): number {
@@ -1517,6 +2052,18 @@ function xpForMissionDifficulty(difficulty: GeneratedMission["difficulty"]): num
 }
 
 export async function getStudentXpSummary(subject?: "math" | "english"): Promise<StudentXpSummary> {
+  const LEVEL_THRESHOLDS = [
+    { level: 1,  min: 0,    max: 200   },
+    { level: 2,  min: 200,  max: 450   },
+    { level: 3,  min: 450,  max: 800   },
+    { level: 4,  min: 800,  max: 1300  },
+    { level: 5,  min: 1300, max: 2000  },
+    { level: 6,  min: 2000, max: 3000  },
+    { level: 7,  min: 3000, max: 4500  },
+    { level: 8,  min: 4500, max: 6500  },
+    { level: 9,  min: 6500, max: 9000  },
+    { level: 10, min: 9000, max: 99999 },
+  ] as const;
   const me = await getCurrentStudentIdentity();
   const modernAttemptsRes = await supabase
     .from("mission_attempts")
@@ -1541,9 +2088,10 @@ export async function getStudentXpSummary(subject?: "math" | "english"): Promise
     }
 
     const totalXp = attempts.reduce((sum, attempt) => sum + (attempt.xp_earned && attempt.xp_earned > 0 ? attempt.xp_earned : (fallbackXpByMissionId.get(attempt.mission_id) ?? 0)), 0);
-    const level = Math.floor(totalXp / 30) + 1;
-    const currentLevelXpFloor = (level - 1) * 30;
-    const nextLevelXpTarget = level * 30;
+    const currentLevelDef = [...LEVEL_THRESHOLDS].reverse().find((l) => totalXp >= l.min) ?? LEVEL_THRESHOLDS[0];
+    const level = currentLevelDef.level;
+    const currentLevelXpFloor = currentLevelDef.min;
+    const nextLevelXpTarget = currentLevelDef.max;
     const xpToNextLevel = Math.max(0, nextLevelXpTarget - totalXp);
 
     return {
@@ -1572,8 +2120,8 @@ export async function getStudentXpSummary(subject?: "math" | "english"): Promise
       totalXp: 0,
       level: 1,
       currentLevelXpFloor: 0,
-      nextLevelXpTarget: 30,
-      xpToNextLevel: 30,
+      nextLevelXpTarget: 200,
+      xpToNextLevel: 200,
     };
   }
 
@@ -1585,9 +2133,10 @@ export async function getStudentXpSummary(subject?: "math" | "english"): Promise
   if (missionsRes.error) throw missionsRes.error;
 
   const totalXp = (missionsRes.data ?? []).reduce((sum, mission) => sum + xpForMissionDifficulty(mission.difficulty), 0);
-  const level = Math.floor(totalXp / 30) + 1;
-  const currentLevelXpFloor = (level - 1) * 30;
-  const nextLevelXpTarget = level * 30;
+  const currentLevelDef = [...LEVEL_THRESHOLDS].reverse().find((l) => totalXp >= l.min) ?? LEVEL_THRESHOLDS[0];
+  const level = currentLevelDef.level;
+  const currentLevelXpFloor = currentLevelDef.min;
+  const nextLevelXpTarget = currentLevelDef.max;
   const xpToNextLevel = Math.max(0, nextLevelXpTarget - totalXp);
 
   return {

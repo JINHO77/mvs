@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import TopBar from "@/components/common/TopBar";
 import { supabase } from "@/lib/supabaseClient";
 import { toPrettyErrorString } from "@/lib/supabaseError";
@@ -20,6 +20,11 @@ function isMissingAccountStatusError(error: unknown): boolean {
 
 export default function StudentLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
+  // /student/weekend/* 는 로그인 없이도 미션 내용 열람 가능
+  const isWeekendPath = pathname?.startsWith("/student/weekend") ?? false;
+  // /student/onboarding/* 는 승인 대기(pending) 상태에서도 접근 허용
+  const isOnboardingPath = pathname?.startsWith("/student/onboarding") ?? false;
   const [gateState, setGateState] = useState<GateState>("loading");
 
   useEffect(() => {
@@ -32,6 +37,11 @@ export default function StudentLayout({ children }: { children: ReactNode }) {
         } = await supabase.auth.getSession();
 
         if (sessionError || !session) {
+          if (isWeekendPath) {
+            // 주말 챌린지는 로그인 없어도 열람 가능 (XP 저장은 불가)
+            if (mounted) setGateState("active");
+            return;
+          }
           router.replace(process.env.NEXT_PUBLIC_DEV_MODE === "true" ? "/dev-login" : "/login");
           return;
         }
@@ -76,7 +86,7 @@ export default function StudentLayout({ children }: { children: ReactNode }) {
           return;
         }
 
-        if (status === "pending") {
+        if (status === "pending" && !isOnboardingPath) {
           router.replace("/onboarding/pending");
           return;
         }
@@ -99,7 +109,7 @@ export default function StudentLayout({ children }: { children: ReactNode }) {
     return () => {
       mounted = false;
     };
-  }, [router]);
+  }, [router, isWeekendPath, isOnboardingPath]);
 
   if (gateState === "loading") {
     return <main className="flex min-h-screen items-center justify-center bg-[var(--bg)] text-[var(--text)]">로딩 중...</main>;

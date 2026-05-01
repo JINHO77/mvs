@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import PageShell from "@/components/ui/PageShell";
 import SectionCard from "@/components/ui/SectionCard";
+import OwnerStatsSection from "@/components/owner/OwnerStatsSection";
 import {
   getOwnerMonthlyReportCoverage,
   getOwnerReportStats,
@@ -40,18 +41,18 @@ type QuickActionGroup = {
 
 const taskCards: TaskCard[] = [
   {
-    key: "approvalsPending",
-    href: "/owner/approvals",
-    title: "가입 승인 대기",
-    description: "신규 학생 계정을 확인합니다.",
-    toneClassName: "border-[var(--accent)] bg-[var(--accent-soft)]",
-  },
-  {
     key: "consultationRequested",
     href: "/owner/consult/requests",
     title: "상담 요청",
     description: "확인되지 않은 요청을 처리합니다.",
     toneClassName: "border-[var(--success-text)] bg-[var(--success-bg)]",
+  },
+  {
+    key: "approvalsPending",
+    href: "/owner/approvals",
+    title: "가입 승인 대기",
+    description: "신규 학생 계정을 확인합니다.",
+    toneClassName: "border-[var(--accent)] bg-[var(--accent-soft)]",
   },
   {
     key: "reportMissing",
@@ -201,11 +202,16 @@ export default function OwnerDashboardPage() {
     >
       <SectionCard header="오늘 처리할 일" description="지금 확인하고 처리해야 할 항목입니다.">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {taskCards.map((card) => (
+          {taskCards.map((card) => {
+            const isConsultHighlighted = card.key === "consultationRequested" && tasks.consultationRequested >= 1;
+            const toneClassName = isConsultHighlighted
+              ? "border-[var(--accent)] bg-[var(--accent-soft)]"
+              : card.toneClassName;
+            return (
             <Link
               key={card.key}
               href={card.href}
-              className={`block rounded-2xl border p-4 transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-lg md:p-5 ${card.toneClassName}`}
+              className={`block rounded-2xl border p-4 transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-lg md:p-5 ${toneClassName}`}
             >
               <div className="text-sm font-medium text-[var(--text)]">{card.title}</div>
               <div className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)] md:text-4xl">
@@ -213,7 +219,8 @@ export default function OwnerDashboardPage() {
               </div>
               <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">{card.description}</p>
             </Link>
-          ))}
+            );
+          })}
         </div>
       </SectionCard>
 
@@ -252,6 +259,8 @@ export default function OwnerDashboardPage() {
           ))}
         </div>
       </SectionCard>
+
+      <OwnerStatsSection />
     </PageShell>
   );
 }

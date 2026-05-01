@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd //c \"netstat -aon | findstr :3000\")",
+      "Bash(cmd //c \"taskkill /PID 5336 /F\")",
+      "Bash(cmd //c \"taskkill /PID 22604 /F\")",
+      "Bash(cmd //c \"taskkill /PID 13216 /F\")",
+      "Bash(npx supabase *)",
+      "Read(//c/Users/Yoo/Downloads/**)",
+      "Bash(node -e ' *)",
+      "Bash(node fix_types.js)",
+      "Bash(awk 'NR==430,NR==435' /c/dev/mvs/src/app/owner/consult/calendar/page.tsx)",
+      "Bash(npx eslint *)",
+      "Bash(echo \"TSC=$?\")",
+      "Bash(git stash *)",
+      "Bash(awk 'NR>=815 && NR<=835' /c/dev/mvs/src/app/owner/consult/calendar/page.tsx)"
+    ]
+  }
+}

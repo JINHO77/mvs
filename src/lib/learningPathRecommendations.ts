@@ -11,7 +11,7 @@ import type { GeneratedMission } from "@/types/missions";
 
 export { buildRecommendationHref } from "@/lib/recommendationNavigation";
 
-type RecommendationRow = Record<string, unknown>;
+type RecommendationRow = Record<string, unknown> & { priority?: number };
 type SupportedSubject = "math" | "english";
 type WeekdayKey = "mon" | "tue" | "wed" | "thu" | "fri";
 type RecommendationSelectionReason = "today" | "first_incomplete" | "previous_incomplete" | "completed_week";
@@ -137,6 +137,22 @@ function toKstDate(date = new Date()): Date {
   return new Date(date.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
 }
 
+function toDbSchoolLevel(profileLevel: string): string {
+  const map: Record<string, string> = {
+    elem: "elementary",
+    mid: "middle",
+    high: "high",
+  };
+  return map[profileLevel] ?? profileLevel;
+}
+
+function toDbGrade(_profileLevel: string, profileGrade: number): number {
+  // curriculum_units.grade is now school-level relative across the board (elementary 3–6,
+  // middle 1–3, high 1–2), so we pass profile grade through. The (school_level, grade)
+  // pair is what disambiguates the bucket.
+  return profileGrade;
+}
+
 function getWeekdayItem(stepOrder: number): { key: WeekdayKey; labelKo: string; labelEn: string } {
   return WEEKDAY_ITEMS[Math.max(0, Math.min(WEEKDAY_ITEMS.length - 1, stepOrder - 1))] ?? WEEKDAY_ITEMS[0]!;
 }
@@ -188,14 +204,14 @@ function sanitizeRecommendationTitle(title: string): string {
 
 function difficultyFocusLine(subject: SupportedSubject, difficulty: GeneratedMission["difficulty"]): string {
   if (subject === "english") {
-    if (difficulty === "easy") return "핵심 문장과 표현을 익히는";
-    if (difficulty === "normal") return "이유를 붙여 말하고 읽는";
-    return "여러 정보를 연결해 표현을 완성하는";
+    if (difficulty === "easy") return "기초 표현과 어휘를 익히는";
+    if (difficulty === "normal") return "문맥을 파악해 활용하는";
+    return "다양한 정보를 조합해 표현하는";
   }
 
-  if (difficulty === "easy") return "핵심 개념을 다시 붙잡는";
-  if (difficulty === "normal") return "조건을 비교하고 풀이를 정리하는";
-  return "여러 조건을 묶어 해결 전략을 세우는";
+  if (difficulty === "easy") return "기초 개념을 다시 짚어보는";
+  if (difficulty === "normal") return "조건을 분석하고 식을 세우는";
+  return "다양한 조건을 종합해 판단하는";
 }
 
 function buildReasonSummary(subject: SupportedSubject, unitName: string, mission: GeneratedMission | null): string {
@@ -212,35 +228,35 @@ function buildDailyConnection(subject: SupportedSubject, unitName: string, missi
   if (scenario) return scenario.length > 90 ? `${scenario.slice(0, 90).trimEnd()}...` : scenario;
 
   if (subject === "english") {
-    return `${unitName}에서 배운 표현을 대화와 안내문, 실제 생활 표현에 바로 연결해 볼 수 있어요.`;
+    return `${unitName}에서 배운 표현을 실제 대화 상황으로 익혀보는 문제예요.`;
   }
 
-  return `${unitName} 개념을 생활 속 문제 상황과 연결해 생각해 볼 수 있어요.`;
+  return `${unitName} 개념을 실제 문제 상황과 연결해서 풀어보는 문제예요.`;
 }
 
 function buildExamConnection(subject: SupportedSubject, mission: GeneratedMission | null): string {
   const concept = mission?.mission_json.mainConcept?.trim();
   if (subject === "english") {
-    if (concept) return `${concept}을 읽기 문항과 표현 문제에서 빠르게 떠올릴 수 있도록 연결해 줘요.`;
-    return "시험형 읽기와 실제 표현에서 자주 만나는 문장 구조를 함께 익힐 수 있어요.";
+    if (concept) return `${concept}을 활용한 독해와 표현 문제에서 자주 나오도록 익혀두면 좋아요.`;
+    return "시험에서는 실제 표현을 정확히 읽고 맥락에 맞게 쓰는 능력을 평가해요.";
   }
 
-  if (concept) return `${concept}을 시험형 문항에서 빠르게 꺼낼 수 있도록 정리해 줘요.`;
-  return "시험에서 자주 흔들리는 조건과 풀이 흐름을 다시 정리할 수 있어요.";
+  if (concept) return `${concept}은 시험 문제에서 자주 나오는 유형으로 풀어두면 좋아요.`;
+  return "시험에서 자주 나오는 유형과 패턴을 다시 한번 정리해볼게요.";
 }
 
 function buildThinkingConnection(subject: SupportedSubject, mission: GeneratedMission | null): string {
   const difficulty = mission?.difficulty ?? "normal";
 
   if (subject === "english") {
-    if (difficulty === "easy") return "쉬운 표현부터 정확한 문장으로 말문을 여는 연습에 좋아요.";
-    if (difficulty === "normal") return "근거를 붙여 말하고 비교하는 연습으로 표현력이 한 단계 올라가요.";
-    return "생각과 정보를 연결해 더 긴 문장으로 확장하는 연습에 좋아요.";
+    if (difficulty === "easy") return "짧은 표현도 정확한 문장으로 만들어 가는 연습이 돼요.";
+    if (difficulty === "normal") return "문맥을 파악하고 판단하는 능력으로 표현력이 한 단계 올라가요.";
+    return "다양한 정보를 조합해서 논리적으로 표현하는 능력을 길러요.";
   }
 
-  if (difficulty === "easy") return "핵심 조건을 빠르게 읽고 답의 방향을 잡는 힘을 다질 수 있어요.";
-  if (difficulty === "normal") return "조건을 비교하고 풀이 근거를 설명하는 힘을 다질 수 있어요.";
-  return "여러 조건을 묶어 스스로 해결 전략을 세우는 힘을 키울 수 있어요.";
+  if (difficulty === "easy") return "기초 개념을 정확히 이해하고 식을 세우는 능력을 길러요.";
+  if (difficulty === "normal") return "조건을 분석하고 식을 세우는 능력을 길러요.";
+  return "다양한 조건을 종합해 판단하고 풀어가는 능력을 길러요.";
 }
 
 async function resolveCurriculumGrade(studentId: string, grade?: number | null): Promise<number | null> {
@@ -276,9 +292,49 @@ function normalizeRecommendationRows(rows: RecommendationRow[], studentId: strin
   });
 }
 
-async function loadLearningPathRows(studentId: string, subject: SupportedSubject, grade?: number | null): Promise<RecommendationRow[]> {
-  const curriculumGrade = await resolveCurriculumGrade(studentId, grade);
-  const rowsRes = await supabase.from("learning_path_recommendations").select("*").returns<RecommendationRow[]>();
+async function loadLearningPathRows(
+  studentId: string,
+  subject: SupportedSubject,
+  grade?: number | null
+): Promise<RecommendationRow[]> {
+  // profiles에서 직접 school_level + grade 가져오기
+  const profileRes = await supabase
+    .from("profiles")
+    .select("school_level, grade")
+    .eq("id", studentId)
+    .maybeSingle<{ school_level: string | null; grade: number | null }>();
+
+  if (profileRes.error) throw profileRes.error;
+
+  const profileLevel = profileRes.data?.school_level ?? null;
+  const profileGrade = profileRes.data?.grade ?? null;
+
+  // DB 컨벤션으로 변환
+  const dbLevel = profileLevel ? toDbSchoolLevel(profileLevel) : null;
+  const dbGrade =
+    dbLevel && profileGrade !== null ? toDbGrade(dbLevel, profileGrade) : null;
+
+  // curriculumGrade는 grade prop 우선, 없으면 변환값 사용
+  const curriculumGrade = grade ?? dbGrade;
+
+  let query = supabase
+    .from("learning_path_recommendations")
+    .select("*")
+    .eq("subject", subject)
+    .eq("is_active", true);
+
+  if (dbLevel !== null) {
+    query = query.eq("school_level", dbLevel); // ← 핵심 추가
+  }
+
+  if (curriculumGrade !== null) {
+    query = query.eq("grade", curriculumGrade);
+  }
+
+  const rowsRes = (await query) as {
+    data: RecommendationRow[] | null;
+    error: { message: string; code?: string } | null;
+  };
 
   if (rowsRes.error) {
     if (isMissingRelationError(rowsRes.error)) return [];
@@ -319,6 +375,10 @@ function rankPathKeys(pathGroups: Map<string, RecommendationRow[]>): string[] {
     .sort((a, b) => {
       const aRows = a[1];
       const bRows = b[1];
+      const aPriority = Math.max(...aRows.map((r) => r.priority ?? 0), 0);
+      const bPriority = Math.max(...bRows.map((r) => r.priority ?? 0), 0);
+      if (bPriority !== aPriority) return bPriority - aPriority;
+
       const aCreated = Math.max(...aRows.map((row) => Date.parse(asString(row.created_at) ?? "") || 0), 0);
       const bCreated = Math.max(...bRows.map((row) => Date.parse(asString(row.created_at) ?? "") || 0), 0);
       const aOrder = Math.min(...aRows.map((row) => asNumber(row.step_order) ?? 999));
@@ -339,22 +399,6 @@ export function getNextPath(currentPathKey: string | null, orderedPathKeys: stri
   return orderedPathKeys[currentIndex + 1] ?? null;
 }
 
-async function loadStudentWeeklyPath(studentId: string, subject: SupportedSubject, weekKey: number): Promise<StudentWeeklyPathRow | null> {
-  const response = await supabase
-    .from("student_weekly_paths")
-    .select("id,student_id,subject,week_key,path_key,created_at")
-    .eq("student_id", studentId)
-    .eq("subject", subject)
-    .eq("week_key", weekKey)
-    .maybeSingle<StudentWeeklyPathRow>();
-
-  if (response.error) {
-    if (isMissingRelationError(response.error)) return null;
-    throw response.error;
-  }
-
-  return response.data ?? null;
-}
 
 async function saveStudentWeeklyPath(studentId: string, subject: SupportedSubject, weekKey: number, pathKey: string): Promise<void> {
   const response = await supabase
@@ -377,8 +421,8 @@ async function saveStudentWeeklyPath(studentId: string, subject: SupportedSubjec
 
 function buildLockReason(steps: WeeklyLearningPathStep[], index: number): string | null {
   const previousStep = steps[index - 1] ?? null;
-  if (!previousStep) return "이전 단계를 먼저 완료하면 열려요.";
-  return `${previousStep.weekdayLabel}요일 단계를 먼저 완료하면 열려요.`;
+  if (!previousStep) return "이전 미션을 완료하면 열려요.";
+  return `${previousStep.weekdayLabel}요일 미션을 완료하면 열려요.`;
 }
 
 function createBaseResult(subject: SupportedSubject, weekKey = getWeekKey(), pathKey: string | null = null): WeeklyLearningPathResult {
@@ -469,7 +513,7 @@ function finalizeWeeklyPath(
   }
 
   const steps = baseSteps.map((step, index, items) => {
-    const isLocked = completedCount < items.length && recommendedIndex >= 0 && index > recommendedIndex && !step.completed;
+    const isLocked = false;
     const isRecommendedToday = index === recommendedIndex;
     const status: RecommendationStatus = step.completed
       ? "completed"
@@ -519,12 +563,27 @@ async function buildFallbackWeeklyPath(studentId: string, subject: SupportedSubj
   const preferredUnitIds = new Set(preferredUnits.map((unit) => unit.id));
   const preferredUnitPriority = new Map(preferredUnits.map((unit, index) => [unit.id, index]));
 
-  const candidates = missions.filter((mission) => {
+  // Tier 1: grade-specific candidates with known units
+  let candidates = missions.filter((mission) => {
     const unit = mission.unit_id ? unitById.get(mission.unit_id) ?? null : null;
     if (!unit) return false;
     if (curriculumGrade !== null && unit.grade !== curriculumGrade && preferredUnitIds.size === 0) return false;
     return mission.subject === subject;
   });
+
+  // Tier 2: any mission with a known unit (ignore grade filter)
+  if (candidates.length < TARGET_DIFFICULTIES.length) {
+    candidates = missions.filter((mission) => {
+      const unit = mission.unit_id ? unitById.get(mission.unit_id) ?? null : null;
+      if (!unit) return false;
+      return mission.subject === subject;
+    });
+  }
+
+  // Tier 3: all published subject missions regardless of unit assignment
+  if (candidates.length < TARGET_DIFFICULTIES.length) {
+    candidates = missions.filter((mission) => mission.subject === subject);
+  }
 
   const pool =
     preferredUnitIds.size > 0
@@ -562,7 +621,10 @@ async function buildFallbackWeeklyPath(studentId: string, subject: SupportedSubj
 
   const progressMap = await fetchMissionProgressMap(
     selectedMissions.map((mission) => mission.id),
-    Object.fromEntries(selectedMissions.map((mission) => [mission.id, mission.mission_json.steps.length]))
+    Object.fromEntries(selectedMissions.map((mission) => {
+      const json = mission.mission_json as Record<string, unknown> & { activities?: unknown[]; steps?: unknown[] };
+      return [mission.id, json.activities?.length ?? json.steps?.length ?? 0];
+    }))
   );
 
   const todayStepOrder = getTodayStepOrder();
@@ -610,7 +672,7 @@ async function buildFallbackWeeklyPath(studentId: string, subject: SupportedSubj
   if (result.completedCount >= result.steps.length) {
     return {
       ...result,
-      completionMessage: "이번 주 루트를 모두 완료했어요.",
+      completionMessage: "이번 주 루트를 모두 완료했어요!",
     };
   }
 
@@ -651,6 +713,21 @@ async function buildWeeklyPathFromRows(args: {
   );
   const unitById = new Map(units.map((unit) => [unit.id, unit]));
   const rowsWithMission = normalizedRows.filter(({ missionId }) => missionById.has(missionId));
+
+  if (rowsWithMission.length < normalizedRows.length) {
+    const droppedSteps = normalizedRows.filter(({ missionId }) => !missionById.has(missionId));
+    console.warn(
+      "[buildWeeklyPathFromRows] visibility 미달로 step 누락",
+      {
+        pathKey: args.pathKey,
+        subject: args.subject,
+        droppedCount: droppedSteps.length,
+        droppedSteps: droppedSteps.map(({ stepOrder, missionId }) => ({ stepOrder, missionId })),
+        hint: "generated_missions에서 status=published, is_active=true, published_at NOT NULL, subject 일치 확인",
+      }
+    );
+  }
+
   if (rowsWithMission.length === 0) return createBaseResult(args.subject, args.weekKey, args.pathKey);
 
   const progressMap = await fetchMissionProgressMap(
@@ -658,7 +735,9 @@ async function buildWeeklyPathFromRows(args: {
     Object.fromEntries(
       rowsWithMission.map(({ missionId }) => {
         const mission = missionById.get(missionId)!;
-        return [mission.id, mission.mission_json.steps.length];
+        const json = mission.mission_json as Record<string, unknown> & { activities?: unknown[]; steps?: unknown[] };
+        const stepCount = json.activities?.length ?? json.steps?.length ?? 0;
+        return [mission.id, stepCount];
       })
     )
   );
@@ -745,13 +824,15 @@ async function buildDbWeeklyPath(studentId: string, subject: SupportedSubject, g
 
   if (orderedPathKeys.length === 0) return createBaseResult(subject, weekKey);
 
-  const existingAssignment = await loadStudentWeeklyPath(studentId, subject, weekKey);
-  const initialPathKey = existingAssignment?.path_key ?? orderedPathKeys[0] ?? null;
-  if (!initialPathKey) return createBaseResult(subject, weekKey);
+  const { data: weeklyPathRow, error: weeklyPathRpcError } = await supabase.rpc("upsert_student_weekly_path", {
+    p_student_id: studentId,
+    p_subject: subject,
+    p_week_key: weekKey,
+  });
+  if (weeklyPathRpcError && !isMissingRelationError(weeklyPathRpcError)) throw weeklyPathRpcError;
 
-  if (!existingAssignment) {
-    await saveStudentWeeklyPath(studentId, subject, weekKey, initialPathKey);
-  }
+  const initialPathKey = (weeklyPathRow as StudentWeeklyPathRow | null)?.path_key ?? orderedPathKeys[0] ?? null;
+  if (!initialPathKey) return createBaseResult(subject, weekKey);
 
   const currentRows = pathGroups.get(initialPathKey) ?? [];
   const nextPathKey = getNextPath(initialPathKey, orderedPathKeys);
@@ -784,7 +865,7 @@ async function buildDbWeeklyPath(studentId: string, subject: SupportedSubject, g
     pathKey: nextPathKey,
     nextPathKey: rotatedNextPathKey,
     rotatedFromPathKey: initialPathKey,
-    completionMessage: "이번 주 루트를 완료해서 다음 루트로 넘어왔어요.",
+    completionMessage: "이번 주 루트를 완료해서 다음 루트로 넘어갔어요.",
   });
 
   return rotatedPath.hasData ? rotatedPath : currentPath;

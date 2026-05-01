@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <radialGradient id="bgxp5" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#EFF6FF"/>
+      <stop offset="100%" stop-color="#BFDBFE"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#bgxp5)" stroke="#3B82F6" stroke-width="2"/>
+  <!-- 번개 -->
+  <polygon points="65,22 40,62 58,62 50,95 82,50 62,50 70,22" fill="#3B82F6" stroke="#1D4ED8" stroke-width="1.5"/>
+  <polygon points="65,26 44,62 61,62 53,90 78,52 60,52 68,26" fill="#60A5FA"/>
+  <polygon points="65,30 48,62 63,62 56,85 74,54 57,54 64,30" fill="#93C5FD" opacity="0.8"/>
+  <!-- XP 텍스트 -->
+  <text x="60" y="68" text-anchor="middle" font-family="sans-serif" font-size="11" font-weight="900" fill="#1E3A8A" opacity="0.7">XP</text>
+  <!-- 반짝임 -->
+  <circle cx="25" cy="38" r="3" fill="#60A5FA" opacity="0.8"/>
+  <circle cx="95" cy="32" r="2.5" fill="#3B82F6" opacity="0.7"/>
+  <circle cx="90" cy="85" r="2" fill="#93C5FD" opacity="0.9"/>
+  <polygon points="28,68 30,74 36,74 31,78 33,84 28,80 23,84 25,78 20,74 26,74" fill="#FFD700" opacity="0.8" transform="scale(0.6) translate(20,30)"/>
+  <text x="60" y="100" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="700" fill="#1E3A8A" letter-spacing="0.5">XP 500 돌파</text>
+  <text x="60" y="111" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#3B82F6" letter-spacing="0.3">RARE</text>
+</svg>

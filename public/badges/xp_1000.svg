@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <radialGradient id="bgxp10" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFF5F0"/>
+      <stop offset="100%" stop-color="#FED7AA"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#bgxp10)" stroke="#EA580C" stroke-width="2.5"/>
+  <!-- 이중 번개 -->
+  <polygon points="50,22 28,58 46,58 38,95 62,52 44,52 52,22" fill="#EA580C" stroke="#C2410C" stroke-width="1"/>
+  <polygon points="50,28 32,58 49,58 41,88 58,54 42,54 50,28" fill="#FB923C"/>
+  <polygon points="72,22 92,58 74,58 82,95 58,52 76,52 68,22" fill="#EA580C" stroke="#C2410C" stroke-width="1" opacity="0.85"/>
+  <polygon points="72,28 88,58 71,58 79,88 62,54 78,54 70,28" fill="#FB923C" opacity="0.85"/>
+  <!-- 중앙 빛 -->
+  <circle cx="60" cy="58" r="8" fill="#FFF7ED" opacity="0.9"/>
+  <text x="60" y="62" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="900" fill="#C2410C">XP</text>
+  <!-- 별 -->
+  <polygon points="60,14 62,21 69,21 64,25 66,32 60,28 54,32 56,25 51,21 58,21" fill="#FFD700" stroke="#F59E0B" stroke-width="0.5"/>
+  <circle cx="22" cy="35" r="3" fill="#FB923C" opacity="0.8"/>
+  <circle cx="96" cy="38" r="2.5" fill="#EA580C" opacity="0.7"/>
+  <text x="60" y="100" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="700" fill="#7C2D12" letter-spacing="0.5">XP 1000 달성</text>
+  <text x="60" y="111" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#EA580C" letter-spacing="0.3">EPIC</text>
+</svg>

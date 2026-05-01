@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 110">
+  <!-- Tail -->
+  <path d="M72,108 Q90,95 86,78 Q82,65 70,68" stroke="#F97316" stroke-width="12" fill="none" stroke-linecap="round"/>
+  <path d="M72,108 Q90,95 86,78 Q82,65 70,68" stroke="#FED7AA" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <!-- Body -->
+  <ellipse cx="46" cy="96" rx="22" ry="13" fill="#F97316"/>
+  <ellipse cx="46" cy="98" rx="13" ry="8" fill="#FED7AA"/>
+  <!-- Left ear -->
+  <polygon points="27,38 20,12 40,28" fill="#F97316"/>
+  <polygon points="28,37 23,16 38,28" fill="#FDA4AF"/>
+  <!-- Right ear -->
+  <polygon points="65,38 72,12 52,28" fill="#F97316"/>
+  <polygon points="64,37 69,16 54,28" fill="#FDA4AF"/>
+  <!-- Head -->
+  <ellipse cx="46" cy="62" rx="27" ry="26" fill="#F97316"/>
+  <!-- White muzzle -->
+  <ellipse cx="46" cy="70" rx="17" ry="14" fill="#FED7AA"/>
+  <!-- Cheeks -->
+  <circle cx="28" cy="67" r="6.5" fill="#FCA5A5" opacity="0.5"/>
+  <circle cx="64" cy="67" r="6.5" fill="#FCA5A5" opacity="0.5"/>
+  <!-- Eyes -->
+  <circle cx="36" cy="57" r="5.5" fill="#1C1917"/>
+  <circle cx="56" cy="57" r="5.5" fill="#1C1917"/>
+  <circle cx="37.5" cy="55.5" r="2.2" fill="white"/>
+  <circle cx="57.5" cy="55.5" r="2.2" fill="white"/>
+  <!-- Nose -->
+  <ellipse cx="46" cy="67" rx="4" ry="3" fill="#7C3AED"/>
+  <!-- Smile -->
+  <path d="M41 71 Q46 76 51 71" stroke="#F9A8C9" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+  <!-- Math symbol -->
+  <text x="40" y="98" font-family="monospace" font-size="11" font-weight="bold" fill="white" opacity="0.9">∑</text>
+</svg>

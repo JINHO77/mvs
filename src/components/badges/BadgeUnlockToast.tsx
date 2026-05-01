@@ -25,7 +25,7 @@ export default function BadgeUnlockToast({ badges, onClose }: BadgeUnlockToastPr
       </div>
       <div className="mt-4 space-y-3">
         {badges.map((badge) => {
-          const meta = getBadgeMetadata(badge.key);
+          const meta = getBadgeMetadata(badge.key, badge);
           return (
             <div key={`${badge.key}:${badge.earnedAt}`} className="rounded-2xl border border-white/10 bg-white/5 p-3">
               <BadgeMedal

@@ -26,7 +26,14 @@ export default function LoginPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const role = params.get("role");
+    const errorParam = params.get("error");
     setRedirectTo(getSafeRedirect());
+
+    if (errorParam === "no_profile") {
+      setMsg("프로필이 없는 계정입니다. 다시 가입해 주세요. 문제가 반복되면 관리자에게 문의하세요.");
+    } else if (errorParam === "blocked") {
+      setMsg("이용이 제한된 계정입니다. 원장님에게 문의해 주세요.");
+    }
 
     if (role === "parent") {
       setSelectedRole("parent");
@@ -51,7 +58,55 @@ export default function LoginPage() {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (error) throw error;
-      router.replace(redirectTo ?? "/dashboard");
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error(AUTH_TEXT.loginFailed);
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role, account_status")
+        .eq("id", user.id)
+        .maybeSingle<{ role: string; account_status: string }>();
+
+      if (!profile) {
+        await supabase.auth.signOut();
+        setMsg("프로필이 없는 계정입니다. 다시 가입해 주세요. 문제가 반복되면 관리자에게 문의하세요.");
+        return;
+      }
+
+      if (profile.account_status === "blocked") {
+        await supabase.auth.signOut();
+        setMsg("이용이 제한된 계정입니다. 원장님에게 문의해 주세요.");
+        return;
+      }
+
+      // proxy가 쿠키를 다시 읽도록 갱신
+      router.refresh();
+
+      // 승인 대기 학생
+      if (profile.account_status === "pending") {
+        router.push("/pending-approval");
+        return;
+      }
+
+      if (redirectTo) {
+        router.push(redirectTo);
+        return;
+      }
+
+      const dest =
+        profile.role === "student"
+          ? "/student"
+          : profile.role === "parent"
+            ? "/parent"
+            : profile.role === "owner"
+              ? "/owner"
+              : profile.role === "teacher"
+                ? "/teacher"
+                : "/";
+      router.push(dest);
     } catch (e: unknown) {
       setMsg(e instanceof Error ? e.message : AUTH_TEXT.loginFailed);
     } finally {
@@ -59,21 +114,6 @@ export default function LoginPage() {
     }
   };
 
-  const sendResetEmail = async () => {
-    setMsg(null);
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${window.location.origin}/auth/reset`,
-      });
-      if (error) throw error;
-      setMsg(AUTH_TEXT.resetEmailSent);
-    } catch (e: unknown) {
-      setMsg(e instanceof Error ? e.message : AUTH_TEXT.resetEmailFailed);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <>
@@ -164,13 +204,12 @@ export default function LoginPage() {
             {selectedRole === "parent" ? "학부모 계정 만들기" : AUTH_TEXT.signUpButton}
           </Link>
 
-          <button
-            className="mt-3 text-sm text-[var(--text-muted)] underline underline-offset-4 hover:text-[var(--text)] disabled:opacity-60"
-            onClick={sendResetEmail}
-            disabled={loading}
+          <Link
+            href="/forgot-password"
+            className="mt-3 block text-center text-sm text-[var(--text-muted)] underline underline-offset-4 hover:text-[var(--text)]"
           >
             {AUTH_TEXT.resetPasswordLink}
-          </button>
+          </Link>
 
           {msg && (
             <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--card-soft)] p-3 text-sm text-[var(--text)]">

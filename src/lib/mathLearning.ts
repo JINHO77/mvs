@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabaseClient";
 import { isUuid } from "@/lib/validators";
 import { type GeneratedMissionPayload } from "@/lib/aiMissionSchema";
+import type { MissionPayload, MissionStepType } from "@/types/missions";
 import { getVisibleMathMissionsByUnit, fetchPublishedMissions, fetchMissionById } from "@/lib/missions";
 
 export type MissionSource = "static" | "ai";
@@ -25,7 +26,7 @@ export type MathMissionRow = {
   scenario: string;
   essential_question: string;
   concept_summary: string;
-  difficulty: "easy" | "normal" | "challenge";
+  difficulty: "easy" | "normal" | "hard" | "challenge";
   estimated_minutes: number;
   is_active: boolean;
   source: MissionSource;
@@ -43,7 +44,7 @@ export type MathStepRow = {
   hint: string | null;
   feedback_correct: string | null;
   feedback_incorrect: string | null;
-  step_type: "input" | "concept";
+  step_type: MissionStepType;
   concept_title: string | null;
   concept_description: string | null;
   source: MissionSource;
@@ -77,7 +78,7 @@ async function getMeStudent(): Promise<MeMini> {
   return data;
 }
 
-function mapPayloadMission(id: string, unitId: string, payload: GeneratedMissionPayload, createdAt?: string): MathMissionRow {
+function mapPayloadMission(id: string, unitId: string, payload: GeneratedMissionPayload | MissionPayload, createdAt?: string): MathMissionRow {
   return {
     id,
     unit_id: unitId,

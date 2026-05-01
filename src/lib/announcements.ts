@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabaseClient";
 import type {
   AnnouncementAudienceRole,
   AnnouncementCategory,
+  AnnouncementPriority,
   AnnouncementTargetScope,
   SchoolLevel,
 } from "@/constants/announcementMeta";
@@ -14,6 +15,10 @@ export type Announcement = {
   requires_ack: boolean;
   scheduled_at: string | null;
   category: AnnouncementCategory;
+  audience_role: AnnouncementAudienceRole;
+  priority: AnnouncementPriority;
+  published_at: string | null;
+  notification_channels: string[];
 };
 
 export type AnnouncementTargetRow = {
@@ -26,7 +31,6 @@ export type AnnouncementTargetRow = {
 };
 
 export type MyAnnouncementItem = Announcement & {
-  audience_role: AnnouncementAudienceRole;
   is_read: boolean;
   is_acknowledged: boolean;
   is_pinned: boolean;
@@ -153,6 +157,9 @@ export async function fetchMyAnnouncements(params: {
       scheduled_at: typeof row.scheduled_at === "string" ? row.scheduled_at : null,
       category: typeof row.category === "string" ? row.category as AnnouncementCategory : "general",
       audience_role: typeof row.audience_role === "string" ? row.audience_role as AnnouncementAudienceRole : "all",
+      priority: typeof row.priority === "string" ? row.priority as AnnouncementPriority : "normal",
+      published_at: typeof row.published_at === "string" ? row.published_at : null,
+      notification_channels: Array.isArray(row.notification_channels) ? row.notification_channels as string[] : ["in_app"],
       is_read: typeof row.is_read === "boolean" ? row.is_read : readAt !== null,
       is_acknowledged: typeof row.is_acknowledged === "boolean" ? row.is_acknowledged : acknowledgedAt !== null,
       is_pinned: typeof row.is_pinned === "boolean" ? row.is_pinned : false,

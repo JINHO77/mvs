@@ -14,11 +14,14 @@ type PageState = "loading" | "ready";
 type RequestRow = {
   id: string;
   requested_start_at: string;
-  status: "requested" | "confirmed" | "done" | "canceled" | "no_show";
+  status: "requested" | "confirmed" | "rescheduled" | "done" | "canceled" | "no_show";
   student_id: string | null;
   guardian_id: string | null;
   type: "phone" | "in_person" | string | null;
   manual_consultation_content: string | null;
+  duration_min: number | null;
+  created_at: string | null;
+  reminder_sent_at: string | null;
 };
 
 type BlockedRow = {
@@ -52,6 +55,7 @@ function shiftDate(date: string, days: number): string {
 function getStatusBadgeLabel(status: RequestRow["status"]): string {
   if (status === "requested") return TEXT.ownerCalendar.statusRequested;
   if (status === "confirmed") return TEXT.ownerCalendar.statusConfirmed;
+  if (status === "rescheduled") return "일정 변경";
   if (status === "done") return "완료";
   if (status === "no_show") return "노쇼";
   return "취소";
@@ -73,13 +77,89 @@ function getGuardianDisplay(profile: ProfileBasic | undefined): string {
   return "보호자";
 }
 
-function slotStatusTone(status: "empty" | "blocked" | "requested" | "confirmed" | "canceled") {
+function slotStatusTone(status: "empty" | "blocked" | "requested" | "confirmed" | "rescheduled" | "canceled") {
   if (status === "requested") return "border-[var(--accent)] bg-[var(--accent-soft)]";
   if (status === "confirmed") return "border-[var(--success-text)] bg-[var(--success-bg)]";
+  if (status === "rescheduled") return "border-blue-500 bg-blue-500/10";
   if (status === "blocked") return "border-[var(--border)] bg-[var(--card-soft)]";
   if (status === "canceled") return "border-[var(--border)] bg-[var(--card-soft)]";
   return "border-[var(--border)] bg-[var(--card)]";
 }
+
+function formatKstTime(iso: string): string {
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(iso));
+}
+
+function formatKstDate(iso: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(iso));
+}
+
+function formatRelativeTime(iso: string): string {
+  const date = new Date(iso);
+  const now = new Date();
+  const diffMs = date.getTime() - now.getTime();
+  const diffH = diffMs / 3600000;
+  if (diffH < 0) return "지난 일정";
+  if (diffH < 1) return `${Math.max(1, Math.round(diffH * 60))}분 후`;
+  if (diffH < 24) return `${Math.round(diffH)}시간 후 (${formatKstTime(iso)})`;
+  const days = Math.floor(diffH / 24);
+  if (days === 1) return `내일 ${formatKstTime(iso)}`;
+  if (days < 7) return `${days}일 후 ${formatKstTime(iso)}`;
+  return `${formatKstDate(iso)} ${formatKstTime(iso)}`;
+}
+
+function hoursUntil(iso: string): number {
+  return (new Date(iso).getTime() - Date.now()) / 3600000;
+}
+
+function isWithin24Hours(iso: string): boolean {
+  const h = hoursUntil(iso);
+  return h >= 0 && h <= 24;
+}
+
+function shiftMonth(date: string, deltaMonths: number): string {
+  const [y, m] = date.split("-").map(Number);
+  if (!y || !m) return date;
+  const next = new Date(Date.UTC(y, m - 1 + deltaMonths, 1));
+  const yy = next.getUTCFullYear();
+  const mm = String(next.getUTCMonth() + 1).padStart(2, "0");
+  return `${yy}-${mm}-01`;
+}
+
+type MonthCell = { dateStr: string; dayNum: number; isCurrentMonth: boolean; isToday: boolean };
+
+function buildMonthGrid(monthStr: string, today: string): MonthCell[] {
+  const [y, m] = monthStr.split("-").map(Number);
+  if (!y || !m) return [];
+  const firstDay = new Date(Date.UTC(y, m - 1, 1));
+  const startWeekday = firstDay.getUTCDay();
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+
+  const cells: MonthCell[] = [];
+  for (let i = 0; i < startWeekday; i++) {
+    cells.push({ dateStr: "", dayNum: 0, isCurrentMonth: false, isToday: false });
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    cells.push({ dateStr, dayNum: d, isCurrentMonth: true, isToday: dateStr === today });
+  }
+  while (cells.length % 7 !== 0) {
+    cells.push({ dateStr: "", dayNum: 0, isCurrentMonth: false, isToday: false });
+  }
+  return cells;
+}
+
+type DayCounts = { confirmed: number; requested: number; rescheduled: number };
 
 export default function OwnerConsultCalendarPage() {
   const router = useRouter();
@@ -100,13 +180,25 @@ export default function OwnerConsultCalendarPage() {
   const [requestedInboxRows, setRequestedInboxRows] = useState<RequestRow[]>([]);
   const [blockedByTime, setBlockedByTime] = useState<Record<string, BlockedRow>>({});
   const [profileMap, setProfileMap] = useState<Record<string, ProfileBasic>>({});
+  const [monthCounts, setMonthCounts] = useState<Record<string, DayCounts>>({});
+  const [nextConsultation, setNextConsultation] = useState<RequestRow | null>(null);
+  const [nextConsultationStudent, setNextConsultationStudent] = useState<ProfileBasic | null>(null);
+  const [newRequestCount, setNewRequestCount] = useState(0);
+
+  const viewMonth = useMemo(() => selectedDate.slice(0, 7), [selectedDate]);
+  const todayKst = useMemo(() => getTodayKstDate(), []);
+  const monthGrid = useMemo(() => buildMonthGrid(viewMonth, todayKst), [viewMonth, todayKst]);
+  const monthLabel = useMemo(() => {
+    const [y, m] = viewMonth.split("-").map(Number);
+    return `${y}년 ${m}월`;
+  }, [viewMonth]);
 
   const totalRequestedCount = useMemo(
     () => Object.values(requestsByTime).filter((row) => row.status === "requested").length,
     [requestsByTime]
   );
   const totalConfirmedCount = useMemo(
-    () => Object.values(requestsByTime).filter((row) => row.status === "confirmed" || row.status === "done").length,
+    () => Object.values(requestsByTime).filter((row) => row.status === "confirmed" || row.status === "done" || row.status === "rescheduled").length,
     [requestsByTime]
   );
   const totalBlockedCount = useMemo(() => Object.keys(blockedByTime).length, [blockedByTime]);
@@ -128,6 +220,19 @@ export default function OwnerConsultCalendarPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canAccess, selectedDate]);
 
+  useEffect(() => {
+    if (!canAccess) return;
+    void loadMonthOverview(viewMonth);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canAccess, viewMonth]);
+
+  useEffect(() => {
+    if (!canAccess) return;
+    void loadNextConsultation();
+    void loadNewRequestCount();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canAccess]);
+
   const selectedRequest = selectedSlot ? requestsByTime[selectedSlot] : null;
   const selectedBlocked = selectedSlot ? blockedByTime[selectedSlot] : null;
   const selectedStudentProfile = selectedRequest?.student_id ? profileMap[selectedRequest.student_id] : undefined;
@@ -141,16 +246,18 @@ export default function OwnerConsultCalendarPage() {
       ? TEXT.ownerCalendar.statusBlocked
       : TEXT.common.empty;
 
-  const selectedStatus: "blocked" | "requested" | "confirmed" | "canceled" | "empty" | null = selectedSlot
+  const selectedStatus: "blocked" | "requested" | "confirmed" | "rescheduled" | "canceled" | "empty" | null = selectedSlot
     ? selectedBlocked
       ? "blocked"
       : selectedRequest?.status === "requested"
         ? "requested"
-        : selectedRequest?.status === "confirmed" || selectedRequest?.status === "done"
-          ? "confirmed"
-          : selectedRequest?.status === "canceled" || selectedRequest?.status === "no_show"
-            ? "canceled"
-            : "empty"
+        : selectedRequest?.status === "rescheduled"
+          ? "rescheduled"
+          : selectedRequest?.status === "confirmed" || selectedRequest?.status === "done"
+            ? "confirmed"
+            : selectedRequest?.status === "canceled" || selectedRequest?.status === "no_show"
+              ? "canceled"
+              : "empty"
     : null;
 
   const initialize = async () => {
@@ -215,8 +322,8 @@ export default function OwnerConsultCalendarPage() {
       const [requestsRes, blockedRes] = await Promise.all([
         supabase
           .from("consultation_requests")
-          .select("id,requested_start_at,status,student_id,guardian_id,type,manual_consultation_content")
-          .in("status", ["requested", "confirmed", "done", "canceled", "no_show"])
+          .select("id,requested_start_at,status,student_id,guardian_id,type,manual_consultation_content,duration_min,created_at,reminder_sent_at")
+          .in("status", ["requested", "confirmed", "rescheduled", "done", "canceled", "no_show"])
           .gte("requested_start_at", startIso)
           .lt("requested_start_at", endIso)
           .returns<RequestRow[]>(),
@@ -274,10 +381,11 @@ export default function OwnerConsultCalendarPage() {
 
         const priority: Record<RequestRow["status"], number> = {
           requested: 0,
-          confirmed: 1,
-          done: 2,
-          canceled: 3,
-          no_show: 4,
+          rescheduled: 1,
+          confirmed: 2,
+          done: 3,
+          canceled: 4,
+          no_show: 5,
         };
 
         if (priority[row.status] < priority[existing.status]) nextRequestsByTime[slot] = row;
@@ -303,6 +411,82 @@ export default function OwnerConsultCalendarPage() {
     }
   };
 
+  const loadMonthOverview = async (monthStr: string) => {
+    const [y, m] = monthStr.split("-").map(Number);
+    if (!y || !m) return;
+    const monthStartDate = `${y}-${String(m).padStart(2, "0")}-01`;
+    const monthEndDate = shiftMonth(monthStartDate, 1);
+    const startIso = kstDateTimeToIso(monthStartDate, "00:00");
+    const endIso = kstDateTimeToIso(monthEndDate, "00:00");
+    if (!startIso || !endIso) return;
+
+    const { data, error: monthError } = await supabase
+      .from("consultation_requests")
+      .select("requested_start_at,status")
+      .in("status", ["requested", "confirmed", "rescheduled"])
+      .gte("requested_start_at", startIso)
+      .lt("requested_start_at", endIso)
+      .returns<{ requested_start_at: string; status: RequestRow["status"] }[]>();
+
+    if (monthError) {
+      setMonthCounts({});
+      return;
+    }
+
+    const counts: Record<string, DayCounts> = {};
+    for (const row of data ?? []) {
+      const dateKey = formatKstDate(row.requested_start_at);
+      if (!counts[dateKey]) counts[dateKey] = { confirmed: 0, requested: 0, rescheduled: 0 };
+      if (row.status === "requested") counts[dateKey].requested += 1;
+      else if (row.status === "rescheduled") counts[dateKey].rescheduled += 1;
+      else if (row.status === "confirmed") counts[dateKey].confirmed += 1;
+    }
+    setMonthCounts(counts);
+  };
+
+  const loadNextConsultation = async () => {
+    const nowIso = new Date().toISOString();
+    const { data, error: nextError } = await supabase
+      .from("consultation_requests")
+      .select("id,requested_start_at,status,student_id,guardian_id,type,manual_consultation_content,duration_min,created_at,reminder_sent_at")
+      .in("status", ["requested", "confirmed", "rescheduled"])
+      .gte("requested_start_at", nowIso)
+      .order("requested_start_at", { ascending: true })
+      .limit(1)
+      .maybeSingle<RequestRow>();
+
+    if (nextError || !data) {
+      setNextConsultation(null);
+      setNextConsultationStudent(null);
+      return;
+    }
+
+    setNextConsultation(data);
+
+    if (data.student_id) {
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("id,name,email")
+        .eq("id", data.student_id)
+        .maybeSingle<ProfileBasic>();
+      setNextConsultationStudent(prof ?? null);
+    } else {
+      setNextConsultationStudent(null);
+    }
+  };
+
+  const loadNewRequestCount = async () => {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count, error: countError } = await supabase
+      .from("consultation_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "requested")
+      .gte("created_at", since);
+
+    if (countError) return;
+    setNewRequestCount(count ?? 0);
+  };
+
   const updateRequestStatus = async (requestId: string, status: "confirmed" | "canceled" | "done" | "no_show") => {
     setActionMessage(null);
     setError(null);
@@ -324,6 +508,9 @@ export default function OwnerConsultCalendarPage() {
     }
 
     await loadSlotsByDate(selectedDate);
+    void loadMonthOverview(viewMonth);
+    void loadNextConsultation();
+    void loadNewRequestCount();
     setActionBusyKey(null);
     setActionMessage("상담 상태를 변경했습니다.");
   };
@@ -386,6 +573,11 @@ export default function OwnerConsultCalendarPage() {
       title={
         <>
           <span className="text-[var(--accent)]">{TEXT.ownerCalendar.label}</span> {TEXT.ownerCalendar.title}
+          {newRequestCount > 0 && (
+            <span className="ml-2 inline-flex items-center rounded-full bg-red-500 px-2 py-0.5 text-xs font-bold text-white animate-pulse">
+              신규 {newRequestCount}
+            </span>
+          )}
         </>
       }
       subtitle={TEXT.ownerCalendar.subtitle}
@@ -419,6 +611,130 @@ export default function OwnerConsultCalendarPage() {
 
       {canAccess ? (
         <>
+          {nextConsultation && (() => {
+            const hUntil = hoursUntil(nextConsultation.requested_start_at);
+            const cardClass =
+              hUntil <= 24
+                ? "border-red-500 bg-red-500/10 shadow-lg shadow-red-500/20"
+                : hUntil <= 72
+                  ? "border-yellow-500 bg-yellow-500/10"
+                  : "border-[var(--border)] bg-[var(--card)]";
+            const icon = hUntil <= 24 ? "🚨" : hUntil <= 72 ? "⏰" : "📅";
+            const label = hUntil <= 24 ? "⚡ 임박! 다음 상담" : "다가오는 상담";
+            const studentName = nextConsultationStudent?.name?.trim() || "학생";
+            const typeLabel = nextConsultation.type === "in_person" ? "🏫 대면" : "📞 전화";
+            const duration = nextConsultation.duration_min ?? 30;
+            return (
+              <div className={`mb-4 rounded-xl border-2 p-4 transition-all ${cardClass}`}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="text-3xl">{icon}</div>
+                    <div>
+                      <p className="text-xs uppercase tracking-wider text-[var(--text-muted)]">
+                        {label}
+                      </p>
+                      <p className="text-base font-bold text-[var(--text)]">
+                        {studentName}
+                      </p>
+                      <p className="mt-0.5 text-sm text-[var(--text-muted)]">
+                        {formatRelativeTime(nextConsultation.requested_start_at)}
+                        {" · "}
+                        {typeLabel}
+                        {" · "}
+                        {duration}분
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDate(formatKstDate(nextConsultation.requested_start_at))}
+                    className="rounded-lg bg-[var(--accent)] px-3 py-2 text-xs font-bold text-[#0b1220]"
+                  >
+                    해당 일자로 이동 →
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
+          <SectionCard header="월간 보기" description="점은 해당 날짜에 상담이 있다는 표시입니다.">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-base font-bold text-[var(--text)]">{monthLabel}</h3>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate(shiftMonth(selectedDate, -1))}
+                  className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-sm hover:border-[var(--accent)]"
+                >
+                  ◀
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate(shiftMonth(selectedDate, 1))}
+                  className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-sm hover:border-[var(--accent)]"
+                >
+                  ▶
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1">
+              {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
+                <div key={d} className="text-center text-xs text-[var(--text-muted)]">
+                  {d}
+                </div>
+              ))}
+              {monthGrid.map((cell, idx) => {
+                if (!cell.isCurrentMonth) {
+                  return <div key={`pad-${idx}`} className="aspect-square" />;
+                }
+                const counts = monthCounts[cell.dateStr] ?? { confirmed: 0, requested: 0, rescheduled: 0 };
+                const total = counts.confirmed + counts.requested + counts.rescheduled;
+                const isSelected = cell.dateStr === selectedDate;
+                const ringClass = cell.isToday ? "ring-1 ring-[var(--accent)]" : "";
+                const selectedClass = isSelected
+                  ? "border-[var(--accent)] bg-[var(--accent-soft)]"
+                  : "border-transparent";
+                return (
+                  <button
+                    key={cell.dateStr}
+                    type="button"
+                    onClick={() => setSelectedDate(cell.dateStr)}
+                    className={`aspect-square rounded-lg border p-1 text-xs ${selectedClass} ${ringClass}`}
+                  >
+                    <div className={cell.isToday ? "font-bold" : ""}>{cell.dayNum}</div>
+                    <div className="mt-0.5 flex justify-center gap-0.5">
+                      {counts.requested > 0 && (
+                        <span className="h-1.5 w-1.5 rounded-full bg-yellow-500" />
+                      )}
+                      {counts.confirmed > 0 && (
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                      )}
+                      {counts.rescheduled > 0 && (
+                        <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                      )}
+                    </div>
+                    {total > 0 && (
+                      <div className="text-[10px] text-[var(--text-muted)]">{total}건</div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-[var(--text-muted)]">
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-green-500" /> 확정
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-yellow-500" /> 대기
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-blue-500" /> 일정 변경
+              </span>
+            </div>
+          </SectionCard>
+
           <SectionCard
             header="일정 필터"
             description="모바일에서는 날짜 이동과 요청 요약을 먼저 확인하고, 슬롯별 상세는 아래 카드에서 처리합니다."
@@ -470,12 +786,10 @@ export default function OwnerConsultCalendarPage() {
             </div>
           </SectionCard>
 
-          <SectionCard header={TEXT.ownerCalendar.inboxTitle} description={TEXT.ownerCalendar.inboxDesc}>
-            {requestedInboxRows.length === 0 ? (
-              <div className="text-sm text-[var(--text-muted)]">{TEXT.ownerCalendar.inboxEmpty}</div>
-            ) : (
-              <div className="space-y-3">
-                {requestedInboxRows.map((row) => {
+          {requestedInboxRows.length > 0 && (
+          <SectionCard header={`📥 ${TEXT.ownerCalendar.inboxTitle} (${requestedInboxRows.length})`} description={TEXT.ownerCalendar.inboxDesc}>
+            <div className="space-y-3">
+              {requestedInboxRows.map((row) => {
                   const student = row.student_id ? profileMap[row.student_id] : undefined;
                   const studentName = student?.name?.trim() || "학생";
                   const slotTime = isoToKstHm(row.requested_start_at);
@@ -512,83 +826,143 @@ export default function OwnerConsultCalendarPage() {
                     </div>
                   );
                 })}
-              </div>
-            )}
+            </div>
           </SectionCard>
+          )}
 
           {slotLoading ? (
             <SectionCard className="bg-[var(--card-muted)] text-sm text-[var(--text-muted)]">Loading slots...</SectionCard>
           ) : null}
 
-          <SectionCard header="시간대 목록" description="캘린더를 카드형으로 풀어 모바일에서 터치하기 쉽게 구성했습니다.">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {timeSlots.map((slot) => {
-                const blocked = blockedByTime[slot];
-                const request = requestsByTime[slot];
-                const studentProfile = request?.student_id ? profileMap[request.student_id] : undefined;
-                const guardianProfile = request?.guardian_id ? profileMap[request.guardian_id] : undefined;
-                const studentName = studentProfile?.name?.trim() || "학생";
-                const guardianName = getGuardianDisplay(guardianProfile);
-                const typeOrSummary = request ? getTypeOrSummary(request) : null;
-
-                const status: "empty" | "blocked" | "requested" | "confirmed" | "canceled" = blocked
-                  ? "blocked"
-                  : request?.status === "requested"
-                    ? "requested"
+          {(() => {
+            type SlotInfo = {
+              slot: string;
+              blocked: BlockedRow | undefined;
+              request: RequestRow | undefined;
+              status: "empty" | "blocked" | "requested" | "confirmed" | "rescheduled" | "canceled";
+            };
+            const slotInfos: SlotInfo[] = timeSlots.map((slot) => {
+              const blocked = blockedByTime[slot];
+              const request = requestsByTime[slot];
+              const status: SlotInfo["status"] = blocked
+                ? "blocked"
+                : request?.status === "requested"
+                  ? "requested"
+                  : request?.status === "rescheduled"
+                    ? "rescheduled"
                     : request?.status === "confirmed" || request?.status === "done"
                       ? "confirmed"
                       : request?.status === "canceled" || request?.status === "no_show"
                         ? "canceled"
                         : "empty";
+              return { slot, blocked, request, status };
+            });
+            const bookedSlots = slotInfos.filter((s) => s.status !== "empty");
+            const emptySlots = slotInfos.filter((s) => s.status === "empty");
 
-                return (
-                  <div
-                    key={slot}
-                    className={`rounded-2xl border p-4 md:p-5 ${slotStatusTone(status)} ${selectedSlot === slot ? "ring-1 ring-[var(--accent)]" : ""}`}
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <p className="text-xs font-medium text-[var(--text-muted)]">시간</p>
-                        <p className="mt-1 text-lg font-semibold tracking-tight text-[var(--text)]">{slot}</p>
-                      </div>
-                      <span className="rounded-full border border-[var(--border)] bg-[var(--card)] px-2.5 py-1 text-xs text-[var(--text-muted)]">
-                        {status === "empty"
-                          ? TEXT.common.empty
-                          : status === "blocked"
-                            ? TEXT.ownerCalendar.statusBlocked
-                            : status === "requested"
-                              ? TEXT.ownerCalendar.statusRequested
-                              : status === "confirmed"
-                                ? TEXT.ownerCalendar.statusConfirmed
-                                : "취소"}
-                      </span>
+            return (
+              <SectionCard header="시간대 목록" description="예약·잠금이 있는 시간만 카드로 강조하고, 빈 시간은 접어둡니다.">
+                {bookedSlots.length > 0 ? (
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-bold text-[var(--text)]">
+                      📅 예약·잠금된 시간 ({bookedSlots.length}건)
+                    </h3>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {bookedSlots.map(({ slot, blocked, request, status }) => {
+                        const studentProfile = request?.student_id ? profileMap[request.student_id] : undefined;
+                        const guardianProfile = request?.guardian_id ? profileMap[request.guardian_id] : undefined;
+                        const studentName = studentProfile?.name?.trim() || "학생";
+                        const guardianName = getGuardianDisplay(guardianProfile);
+                        const typeOrSummary = request ? getTypeOrSummary(request) : null;
+                        const showReminder = request && (status === "confirmed" || status === "requested" || status === "rescheduled");
+                        return (
+                          <div
+                            key={slot}
+                            className={`rounded-2xl border p-4 md:p-5 ${slotStatusTone(status)} ${selectedSlot === slot ? "ring-1 ring-[var(--accent)]" : ""}`}
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div>
+                                <p className="text-xs font-medium text-[var(--text-muted)]">시간</p>
+                                <p className="mt-1 text-lg font-semibold tracking-tight text-[var(--text)]">{slot}</p>
+                              </div>
+                              <span className="rounded-full border border-[var(--border)] bg-[var(--card)] px-2.5 py-1 text-xs text-[var(--text-muted)]">
+                                {status === "blocked"
+                                  ? TEXT.ownerCalendar.statusBlocked
+                                  : status === "requested"
+                                    ? TEXT.ownerCalendar.statusRequested
+                                    : status === "rescheduled"
+                                      ? "일정 변경"
+                                      : status === "confirmed"
+                                        ? TEXT.ownerCalendar.statusConfirmed
+                                        : "취소"}
+                              </span>
+                            </div>
+
+                            {request && !blocked ? (
+                              <div className="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-3 text-xs text-[var(--text-muted)]">
+                                <div>학생: {studentName}</div>
+                                <div>보호자: {guardianName}</div>
+                                <div>요약: {typeOrSummary}</div>
+                                {showDebugIds ? <div>Request ID: {request.id}</div> : null}
+                              </div>
+                            ) : (
+                              <div className="mt-3 text-xs text-[var(--text-muted)]">
+                                {blocked ? "잠금된 시간입니다." : "예약 또는 잠금이 없는 시간입니다."}
+                              </div>
+                            )}
+
+                            {showReminder && request ? (
+                              request.reminder_sent_at ? (
+                                <div className="mt-2 text-xs text-green-400">
+                                  ✓ 리마인더 발송됨 ({formatKstTime(request.reminder_sent_at)})
+                                </div>
+                              ) : isWithin24Hours(request.requested_start_at) ? (
+                                <div className="mt-2 text-xs text-yellow-400">
+                                  ⏰ 리마인더 대기 중 (오전 9시 자동 발송)
+                                </div>
+                              ) : null
+                            ) : null}
+
+                            <button
+                              type="button"
+                              className="mt-4 w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text)]"
+                              onClick={() => setSelectedSlot(slot)}
+                            >
+                              이 시간 보기
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
-
-                    {request && !blocked ? (
-                      <div className="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-3 text-xs text-[var(--text-muted)]">
-                        <div>학생: {studentName}</div>
-                        <div>보호자: {guardianName}</div>
-                        <div>요약: {typeOrSummary}</div>
-                        {showDebugIds ? <div>Request ID: {request.id}</div> : null}
-                      </div>
-                    ) : (
-                      <div className="mt-3 text-xs text-[var(--text-muted)]">
-                        {blocked ? "잠금된 시간입니다." : "예약 또는 잠금이 없는 시간입니다."}
-                      </div>
-                    )}
-
-                    <button
-                      type="button"
-                      className="mt-4 w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text)]"
-                      onClick={() => setSelectedSlot(slot)}
-                    >
-                      이 시간 보기
-                    </button>
                   </div>
-                );
-              })}
-            </div>
-          </SectionCard>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)] p-4 text-sm text-[var(--text-muted)]">
+                    이 날짜에는 예약된 상담이 없습니다.
+                  </div>
+                )}
+
+                {emptySlots.length > 0 && (
+                  <details className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--card)]">
+                    <summary className="cursor-pointer p-3 text-sm text-[var(--text-muted)]">
+                      ⚪ 비어있는 시간대 ({emptySlots.length}개) — 클릭해서 펼치기
+                    </summary>
+                    <div className="grid grid-cols-3 gap-2 p-3 sm:grid-cols-6">
+                      {emptySlots.map(({ slot }) => (
+                        <button
+                          key={slot}
+                          type="button"
+                          onClick={() => setSelectedSlot(slot)}
+                          className={`rounded-lg border border-dashed border-[var(--border)] py-2 text-xs ${selectedSlot === slot ? "ring-1 ring-[var(--accent)]" : ""}`}
+                        >
+                          {slot}
+                        </button>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </SectionCard>
+            );
+          })()}
 
           {selectedSlot ? (
             <SectionCard
@@ -628,7 +1002,7 @@ export default function OwnerConsultCalendarPage() {
                 </div>
               ) : null}
 
-              {selectedStatus === "confirmed" && selectedRequest ? (
+              {(selectedStatus === "confirmed" || selectedStatus === "rescheduled") && selectedRequest ? (
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                   <button
                     type="button"

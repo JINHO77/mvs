@@ -25,17 +25,21 @@ export async function POST(request: NextRequest) {
       .eq("id", userId)
       .maybeSingle<{ id: string; role: string | null; account_status: string | null; academy_id: string | null }>();
 
+    // Authorization failures collapse to 404 ("Not found") rather than 403 to
+    // avoid leaking which reportIds exist. Authentication failure (401) above
+    // is unaffected — that's a missing token, not an existence oracle.
     if (requesterError || !requester) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     if ((requester.account_status ?? "active") !== "active") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
     const { data: report, error: reportError } = await supabaseAdmin
       .from("reports")
       .select("id,academy_id,student_id,math_pdf_path,math_pdf_name")
       .eq("id", reportId)
+      .eq("is_deleted", false)
       .maybeSingle<{
         id: string;
         academy_id: string;
@@ -45,10 +49,10 @@ export async function POST(request: NextRequest) {
       }>();
 
     if (reportError || !report) {
-      return NextResponse.json({ error: "Report not found" }, { status: 404 });
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     if (!report.math_pdf_path) {
-      return NextResponse.json({ error: "No PDF attached" }, { status: 404 });
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
     let allowed = false;
@@ -67,7 +71,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
     const ttl = typeof expiresIn === "number" ? Math.max(30, Math.min(3600, Math.floor(expiresIn))) : 120;

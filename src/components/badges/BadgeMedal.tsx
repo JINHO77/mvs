@@ -1,5 +1,4 @@
-﻿import Image from "next/image";
-import { BADGE_CATEGORY_LABELS, BADGE_RARITY_LABELS, BADGE_SUBJECT_LABELS, type BadgeRarity } from "@/constants/badgeMetadata";
+﻿import { BADGE_CATEGORY_LABELS, BADGE_RARITY_LABELS, BADGE_SUBJECT_LABELS, type BadgeRarity } from "@/constants/badgeMetadata";
 import { normalizeDisplayText } from "@/lib/uiText";
 import type { BadgeCategory, BadgeProgressState, BadgeSubject } from "@/types/badges";
 
@@ -60,7 +59,12 @@ export default function BadgeMedal({
         <div className="absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,0.14),rgba(255,255,255,0.02))]" />
         <div className="absolute -right-3 -top-3 h-10 w-10 rounded-full blur-2xl" style={{ backgroundColor: accentColor, opacity: dimmed ? 0.15 : 0.35 }} />
         <div className={`relative flex h-full w-full items-center justify-center ${sizing.pad}`}>
-          <Image src={iconUrl} alt="" width={sizing.icon} height={sizing.icon} className="object-contain" />
+          <img
+            src={iconUrl}
+            alt=""
+            className="h-full w-full object-contain"
+            onError={(e) => { e.currentTarget.style.display = "none"; }}
+          />
         </div>
       </div>
       <div className="min-w-0">

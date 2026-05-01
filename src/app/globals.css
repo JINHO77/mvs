@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Tailwind v4: html.dark 클래스 기반 다크모드 활성화 */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --font-geist-sans: "Segoe UI", Arial, Helvetica, sans-serif;
   --font-geist-mono: "Cascadia Mono", Consolas, "Courier New", monospace;
@@ -26,6 +29,43 @@
   --warning-bg: #FAEEDA;
   --warning-text: #633806;
   --warning-border: #EF9F27;
+  --mission-shell-bg: linear-gradient(180deg, #fffafc 0%, #fbeaf0 100%);
+  --mission-shell-border: #f0c4d8;
+  --mission-shell-shadow: 0 24px 80px rgba(180, 40, 90, 0.12);
+  --mission-panel-bg: rgba(255, 255, 255, 0.94);
+  --mission-panel-strong-bg: rgba(251, 234, 240, 0.92);
+  --mission-overlay-bg: rgba(253, 240, 245, 0.92);
+  --mission-progress-track: rgba(212, 83, 126, 0.12);
+  --mission-progress-fill: linear-gradient(90deg, #D4537E 0%, #E89AB6 52%, #5DCAA5 100%);
+  --mission-default-bg: rgba(255, 255, 255, 0.96);
+  --mission-default-border: #f0c4d8;
+  --mission-default-text: #3a0a1e;
+  --mission-default-muted: #993556;
+  --mission-accent-bg: rgba(251, 234, 240, 0.98);
+  --mission-accent-border: rgba(212, 83, 126, 0.24);
+  --mission-accent-text: #7c2142;
+  --mission-hint-bg: rgba(250, 238, 218, 0.98);
+  --mission-hint-border: rgba(239, 159, 39, 0.28);
+  --mission-hint-text: #633806;
+  --mission-success-bg: rgba(225, 245, 238, 0.98);
+  --mission-success-border: rgba(8, 80, 65, 0.18);
+  --mission-success-text: #085041;
+  --mission-error-bg: rgba(253, 236, 236, 0.98);
+  --mission-error-border: rgba(138, 34, 34, 0.18);
+  --mission-error-text: #8a2222;
+  --mission-explanation-bg: rgba(255, 255, 255, 0.98);
+  --mission-explanation-border: rgba(153, 53, 86, 0.18);
+  --mission-explanation-text: #4a1730;
+  --mission-option-bg: rgba(255, 255, 255, 0.98);
+  --mission-option-border: #f0c4d8;
+  --mission-option-text: #4a1730;
+  --mission-option-hover-border: rgba(212, 83, 126, 0.38);
+  --mission-option-selected-bg: rgba(251, 234, 240, 0.98);
+  --mission-option-selected-border: rgba(212, 83, 126, 0.46);
+  --mission-option-selected-text: #7c2142;
+  --mission-input-bg: rgba(255, 255, 255, 0.98);
+  --mission-input-border: #f0c4d8;
+  --mission-input-placeholder: rgba(153, 53, 86, 0.6);
 
   /* 주간 카드 배경 - 라이트모드 */
   --card-done-border: #5DCAA5;
@@ -87,6 +127,47 @@ html.dark {
   --warning-bg: #2c2412;
   --warning-text: #f3d98a;
   --warning-border: #9b7a25;
+  --mission-shell-bg: linear-gradient(180deg, rgba(2, 6, 23, 0.96), rgba(15, 23, 42, 0.92));
+  --mission-shell-border: #1e293b;
+  --mission-shell-shadow: 0 24px 80px rgba(2, 6, 23, 0.35);
+  --mission-panel-bg: rgba(2, 6, 23, 0.72);
+  --mission-panel-strong-bg: rgba(15, 23, 42, 0.82);
+  --mission-overlay-bg: rgba(2, 6, 23, 0.9);
+  --mission-progress-track: rgba(30, 41, 59, 0.92);
+  --mission-progress-fill: linear-gradient(90deg, rgba(250, 204, 21, 0.95) 0%, rgba(251, 191, 36, 0.92) 50%, rgba(110, 231, 183, 0.92) 100%);
+  --mission-default-bg: rgba(2, 6, 23, 0.72);
+  --mission-default-border: #1e293b;
+  --mission-default-text: #f1f5f9;
+  --mission-default-muted: #94a3b8;
+  --mission-accent-bg: rgba(250, 204, 21, 0.12);
+  --mission-accent-border: rgba(250, 204, 21, 0.2);
+  --mission-accent-text: #fef3c7;
+  --mission-hint-bg: rgba(250, 204, 21, 0.08);
+  --mission-hint-border: rgba(250, 204, 21, 0.24);
+  --mission-hint-text: #e5d7a0;
+  --hint-bg: rgba(250, 204, 21, 0.08);
+  --hint-text: #e5d7a0;
+  --hint-border: rgba(250, 204, 21, 0.25);
+  --card-bg: rgba(20, 30, 50, 0.6);
+  --mission-success-bg: rgba(122, 210, 164, 0.12);
+  --mission-success-border: rgba(122, 210, 164, 0.24);
+  --mission-success-text: #a7e8c3;
+  --mission-error-bg: rgba(255, 180, 180, 0.1);
+  --mission-error-border: rgba(255, 180, 180, 0.22);
+  --mission-error-text: #ffb4b4;
+  --mission-explanation-bg: rgba(34, 211, 238, 0.1);
+  --mission-explanation-border: rgba(34, 211, 238, 0.22);
+  --mission-explanation-text: #cffafe;
+  --mission-option-bg: rgba(2, 6, 23, 0.64);
+  --mission-option-border: #334155;
+  --mission-option-text: #e2e8f0;
+  --mission-option-hover-border: #64748b;
+  --mission-option-selected-bg: rgba(250, 204, 21, 0.12);
+  --mission-option-selected-border: rgba(250, 204, 21, 0.42);
+  --mission-option-selected-text: #f8fafc;
+  --mission-input-bg: rgba(2, 6, 23, 0.64);
+  --mission-input-border: #334155;
+  --mission-input-placeholder: rgba(148, 163, 184, 0.72);
 
   /* 주간 카드 배경 - 다크모드 */
   --card-done-border: rgba(122, 210, 164, 0.34);

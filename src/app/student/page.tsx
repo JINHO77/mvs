@@ -2,13 +2,16 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import BadgeShowcasePanel from "@/components/badges/BadgeShowcasePanel";
+import PushSubscribeButton from "@/components/pwa/PushSubscribeButton";
 import PageShell from "@/components/ui/PageShell";
 import { formatInterestTagSummary, interestTagLabel, interestTagOptions, normalizeInterestTagSelection, type InterestTagKey } from "@/constants/interestTags";
 import { studentHomeCopy } from "@/constants/studentHomeCopy";
 import { fetchMyAnnouncements, type MyAnnouncementItem } from '@/lib/announcements';
 import { normalizeDisplayText } from '@/lib/uiText';
-import { getEffectiveSchoolGrade } from "@/lib/academicYear";
+import { formatSchoolGrade } from "@/lib/academicYear";
+import { fetchEffectiveGrade, type EffectiveGradeRow } from "@/lib/effectiveGrade";
 import {
   fetchCurriculumUnits,
   fetchMissionProgressMap,
@@ -17,6 +20,9 @@ import {
 } from "@/lib/missions";
 import { getStudentBadgeShowcase } from "@/lib/badges";
 import { getStudentMissionRecommendations, type MissionRecommendationResult } from "@/lib/recommendations";
+import { getThisWeekRecommendations, type WeekendRecommendation } from "@/lib/weekendRecommendations";
+import XpLevelBar from "@/components/XpLevelBar";
+import { getStudentXpStatus, type StudentXpStatus } from "@/lib/xpSystem";
 import { formatReportMonth, listStudentReports, type ReportListItem } from "@/lib/reports";
 import type { ProfileSchoolLevel } from "@/lib/studentProfile";
 import { supabase } from "@/lib/supabaseClient";
@@ -115,6 +121,7 @@ function studentNoText(value: string | null): string {
 }
 
 export default function StudentDashboardPage() {
+  const router = useRouter();
   const [unreadCount, setUnreadCount] = useState(0);
   const [recentAlerts, setRecentAlerts] = useState<MyAnnouncementItem[]>([]);
   const [reports, setReports] = useState<ReportListItem[]>([]);
@@ -138,10 +145,13 @@ export default function StudentDashboardPage() {
   const [editName, setEditName] = useState("");
   const [startNowRecommendation, setStartNowRecommendation] = useState<MissionRecommendationResult | null>(null);
   const [badgeShowcase, setBadgeShowcase] = useState<BadgeShowcase>(EMPTY_BADGE_SHOWCASE);
+  const [weekendRecs, setWeekendRecs] = useState<WeekendRecommendation[]>([]);
+  const [xpStatus, setXpStatus] = useState<StudentXpStatus | null>(null);
+  const [effectiveGrade, setEffectiveGrade] = useState<EffectiveGradeRow | null>(null);
 
   const displayGradeLabel = useMemo(() => {
-    const effectiveGrade = getEffectiveSchoolGrade(profile?.school_level ?? null, profile?.grade ?? null);
-    return effectiveGrade?.label ?? studentHomeCopy.emptyValue;
+    if (!profile?.school_level || profile?.grade == null) return studentHomeCopy.emptyValue;
+    return formatSchoolGrade(profile.school_level, profile.grade);
   }, [profile?.grade, profile?.school_level]);
 
   const freshUnitCount = useMemo(() => {
@@ -176,6 +186,16 @@ export default function StudentDashboardPage() {
         if (sessionError) throw sessionError;
 
         if (!session) return;
+
+        // XP 현황 조회 (비차단 — 실패해도 대시보드 영향 없음)
+        getStudentXpStatus(session.user.id).then((status) => {
+          if (mounted && status) setXpStatus(status);
+        }).catch(() => {});
+
+        // effective grade (1~2월 예습 모드 신호) — 비차단
+        fetchEffectiveGrade(session.user.id).then((row) => {
+          if (mounted && row) setEffectiveGrade(row);
+        }).catch(() => {});
 
         const [announcementResult, profileResult, statsResult, unitsResult, reportsResult, missionsResult, recommendationResult, badgeResult] = await Promise.allSettled([
           fetchMyAnnouncements({ status: "all", limit: 3, offset: 0, query: null, sort: "latest", hasAttachments: null }),
@@ -252,6 +272,15 @@ export default function StudentDashboardPage() {
     return () => {
       mounted = false;
     };
+  }, []);
+
+  // 이번 주 주말 챌린지 추천 미션 로드
+  useEffect(() => {
+    getThisWeekRecommendations()
+      .then((recs) => {
+        if (recs.length > 0) setWeekendRecs(recs);
+      })
+      .catch((e) => console.error("weekend recs load failed on dashboard", e));
   }, []);
 
   const handleInterestTagsSave = async () => {
@@ -389,48 +418,214 @@ export default function StudentDashboardPage() {
           </div>
         </section>
 
+        {effectiveGrade?.is_preview && effectiveGrade.preview_message && (
+          <div className="rounded-2xl border border-[var(--accent)] bg-[var(--accent-soft)] px-4 py-3 text-sm font-semibold text-[var(--accent)]">
+            {effectiveGrade.preview_message}
+          </div>
+        )}
+
+        {!profileLoading && profile && normalizeInterestTagSelection(profile.interest_tags).length === 0 && (
+          <div className="flex flex-col gap-3 rounded-2xl border border-[var(--accent)] bg-[var(--accent-soft)] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[var(--text)]">🎯 관심 분야를 설정해보세요!</p>
+              <p className="mt-1 text-xs leading-5 text-[var(--text-muted)] sm:text-sm">
+                좋아하는 주제를 알려주면 더 재미있는 미션을 추천해드려요.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => router.push("/student/onboarding/interests")}
+              className="inline-flex items-center justify-center whitespace-nowrap rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--bg)] transition-opacity hover:opacity-90"
+            >
+              설정하기
+            </button>
+          </div>
+        )}
+
         <section className="grid grid-cols-1 gap-4 xl:grid-cols-4">
-          <article className="flex min-h-[320px] flex-col rounded-[24px] border border-[rgba(231,200,115,0.22)] bg-[var(--card)] p-8 shadow-[var(--shadow)] transition duration-200 hover:-translate-y-[2px] hover:border-[rgba(231,200,115,0.42)]">
-            <div className="flex min-h-[112px] flex-col">
-              <h3 className="text-2xl font-semibold text-[var(--text)]">{studentHomeCopy.learningTitle}</h3>
-              <p className="mt-4 text-sm leading-6 text-[var(--text-muted)]">{studentHomeCopy.learningDescription}</p>
-              <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">{studentHomeCopy.learningDescriptionSecondary}</p>
+          {/* ── 오늘의 학습 미션 (수학 + 영어 통합) ── */}
+          <article className="relative flex min-h-[320px] flex-col overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)] transition duration-200 hover:-translate-y-[2px]">
+            {/* 배경 그라데이션 장식 */}
+            <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-[var(--accent)]/10 blur-2xl" />
+            <div className="pointer-events-none absolute -bottom-6 -left-6 h-24 w-24 rounded-full bg-purple-500/10 blur-2xl" />
+
+            {/* 헤더 */}
+            <div className="relative flex items-start justify-between">
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-[var(--accent)]">TODAY</p>
+                <h3 className="text-xl font-black text-[var(--text)]">오늘의 학습 미션</h3>
+              </div>
+              <span className="rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-2.5 py-1 text-xs text-[var(--text-muted)]">
+                {new Date().toLocaleDateString("ko-KR", { month: "short", day: "numeric", weekday: "short" })}
+              </span>
             </div>
-            <div className="mt-6 rounded-2xl border border-dashed border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] px-4 py-3 text-sm text-[var(--text-muted)]">
-              {startNowRecommendation
-                ? normalizeDisplayText(startNowRecommendation.reason, studentHomeCopy.learningSecondary)
-                : studentHomeCopy.learningSecondary}
-            </div>
-            <p className="mt-3 text-xs text-[var(--text-muted)]">{"\uAD00\uC2EC \uC8FC\uC81C: " + selectedInterestSummary}</p>
-            <div className="mt-auto flex flex-col gap-3 pt-8 sm:flex-row">
-              <Link href="/student/math" className="inline-flex w-full items-center justify-center rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[var(--bg)] transition-opacity hover:opacity-95 sm:w-auto">
-                {studentHomeCopy.learningPrimaryButton}
-              </Link>
-              <Link href={studentHomeCopy.learningSecondaryHref} className="inline-flex w-full items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] px-5 py-3 text-sm font-medium text-[var(--text)] transition-colors hover:border-[var(--accent)] sm:w-auto">
-                {studentHomeCopy.learningSecondaryButton}
-              </Link>
-            </div>
+
+            {/* 본문 문구 */}
+            <p className="relative mt-3 text-sm leading-relaxed text-[var(--text-muted)]">
+              🎯 <span className="font-medium text-[var(--text)]">오늘 도전할 준비 됐어?</span><br />
+              수학과 영어, 각자의 페이스로 오늘 한 걸음씩 나아가보자!
+            </p>
+
+            {/* 이번 주 진행 현황 — 학습 데이터 있을 때 */}
             {!loading && !dashboardError && hasLearningSnapshot && (
-              <p className="mt-4 text-xs text-[var(--text-muted)]">{learningStatusMessage}</p>
+              <div className="relative mt-3 rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] p-3">
+                <p className="mb-1 text-xs text-[var(--text-muted)]">이번 주 완료 미션</p>
+                <div className="flex items-center gap-2">
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--border)]">
+                    <div
+                      className="h-full rounded-full bg-[var(--accent)] transition-all"
+                      style={{ width: `${Math.min((missionStats.weeklyCompletedCount / 5) * 100, 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-xs font-bold text-[var(--accent)]">
+                    {missionStats.weeklyCompletedCount}/5
+                  </span>
+                </div>
+              </div>
             )}
-            {loading && <p className="mt-4 text-xs text-[var(--text-muted)]">{learningStatusMessage}</p>}
-            {!loading && dashboardError && <p className="mt-4 text-xs text-[#FFB4B4]">{learningStatusMessage}</p>}
-            {!loading && !dashboardError && !hasLearningSnapshot && (
-              <p className="mt-4 text-xs text-[var(--text-muted)]">{learningStatusMessage}</p>
+
+            {/* 빈 상태 / 에러 — 에러 문구 대신 부드럽게 */}
+            {!loading && (dashboardError || !hasLearningSnapshot) && (
+              <div className="relative mt-3 rounded-2xl border border-dashed border-[var(--border)] p-3 text-center">
+                <p className="text-xs text-[var(--text-muted)]">
+                  📚 학습 경로를 준비하는 중이에요.<br />
+                  <span className="font-medium text-[var(--accent)]">아래에서 바로 시작할 수 있어요!</span>
+                </p>
+              </div>
             )}
+
+            {/* 로딩 중 스켈레톤 */}
+            {loading && (
+              <div className="relative mt-3 h-10 animate-pulse rounded-2xl bg-[var(--card-soft)]" />
+            )}
+
+            {/* 수학 / 영어 버튼 */}
+            <div className="relative mt-auto flex gap-3 pt-4">
+              <button
+                type="button"
+                onClick={() => router.push("/student/math")}
+                className="group flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] px-4 py-3.5 text-sm font-bold text-[var(--bg)] shadow-lg shadow-[var(--accent)]/20 transition-all hover:opacity-90 active:scale-95"
+              >
+                <span className="text-base">📐</span>
+                <span>수학 시작</span>
+                <span className="ml-auto opacity-60 transition-transform group-hover:translate-x-0.5">→</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/student/english")}
+                className="group flex flex-1 items-center justify-center gap-2 rounded-2xl border-2 border-[var(--accent)] px-4 py-3.5 text-sm font-bold text-[var(--accent)] transition-all hover:bg-[var(--accent-soft)] active:scale-95"
+              >
+                <span className="text-base">📖</span>
+                <span>영어 시작</span>
+                <span className="ml-auto opacity-60 transition-transform group-hover:translate-x-0.5">→</span>
+              </button>
+            </div>
           </article>
 
+          {/* ── 주말 챌린지 ── */}
           <article className="flex min-h-[320px] flex-col rounded-[24px] border border-[var(--border)] bg-[var(--card)] p-8 shadow-[var(--shadow)] transition duration-200 hover:-translate-y-[2px] hover:border-[var(--accent)]">
             <div className="flex min-h-[112px] flex-col">
-              <h3 className="text-2xl font-semibold text-[var(--text)]">{"\uC601\uC5B4 \uD559\uC2B5"}</h3>
-              <p className="mt-4 text-sm leading-6 text-[var(--text-muted)]">{"\uB300\uD654, \uC548\uB0B4\uBB38, \uD559\uAD50\uC0DD\uD65C \uC8FC\uC81C\uB85C \uC601\uC5B4\uB97C \uC774\uD574\uD558\uACE0 \uD45C\uD604\uD574 \uBCF4\uC138\uC694."}</p>
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="text-2xl font-semibold text-[#534AB7] dark:text-[#AFA9EC]">주말 챌린지</h3>
+                <div className="flex shrink-0 flex-col items-end gap-0.5">
+                  <span
+                    className="rounded-full px-2.5 py-1 text-[11px] font-semibold text-white"
+                    style={{ background: "linear-gradient(135deg, #7F77DD, #D4537E)" }}
+                  >
+                    +100 XP
+                  </span>
+                  <p className="text-[10px] text-[#7F77DD]">평일보다 2배 XP</p>
+                </div>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">창의·융합·논리·협력 — AI 시대 필수 역량</p>
             </div>
-            <div className="mt-6 rounded-2xl border border-dashed border-[rgba(126,214,165,0.24)] bg-[rgba(126,214,165,0.08)] px-4 py-3 text-sm leading-6 text-[var(--text-muted)]">{"\uC57D\uC18D \uC7A1\uAE30, \uC548\uB0B4\uBB38 \uC77D\uAE30, \uC758\uACAC \uB9D0\uD558\uAE30 \uAC19\uC740 \uC601\uC5B4 \uACFC\uC5C5\uC744 \uB9CC\uB098 \uBCF4\uC138\uC694."}</div>
-            <p className="mt-3 text-xs text-[var(--text-muted)]">{"\uAD00\uC2EC \uC8FC\uC81C\uB97C \uBC18\uC601\uD55C \uC601\uC5B4 \uCD94\uCC9C\uB3C4 \uD568\uAED8 \uBCFC \uC218 \uC788\uC5B4\uC694."}</p>
-            <div className="mt-auto flex flex-col gap-3 pt-8 sm:flex-row">
-              <Link href="/student/english" className="inline-flex w-full items-center justify-center rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[var(--bg)] transition-opacity hover:opacity-95 sm:w-auto">
-                {"\uC601\uC5B4 \uC2DC\uC791"}
-              </Link>
+            <div className="mt-6 flex flex-col gap-3">
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 text-sm font-bold text-[#7F77DD]">●</span>
+                <span className="text-sm text-[var(--text-muted)]">
+                  <strong className="text-[var(--text)]">창의·융합 (토)</strong>
+                  {" 다른 분야를 연결해 새로운 것을 만드는 능력 — PBL·PhBL로 탐구해요"}
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 text-sm font-bold text-[#D4537E]">●</span>
+                <span className="text-sm text-[var(--text-muted)]">
+                  <strong className="text-[var(--text)]">인성·협력 (일)</strong>
+                  {" 철학적 사고와 협력으로 복잡한 세상을 함께 풀어가는 힘을 키워요"}
+                </span>
+              </div>
+            </div>
+            {/* ── XP 레벨 현황 ── */}
+            {xpStatus && (
+              <div className="mt-5">
+                <XpLevelBar
+                  level={xpStatus.level}
+                  levelName={xpStatus.level_name}
+                  levelEmoji={xpStatus.level_emoji}
+                  levelColor={xpStatus.level_color}
+                  totalXp={xpStatus.total_xp}
+                  nextLevelXp={xpStatus.next_level_xp}
+                  nextLevelName={xpStatus.next_level_name}
+                  progressPct={xpStatus.progress_pct}
+                  dailyStreak={xpStatus.daily_streak}
+                  compact={true}
+                />
+              </div>
+            )}
+
+            {/* ── 이번 주 추천 미션 (토/일 표시) ── */}
+            {weekendRecs.length > 0 && (() => {
+              const kstDay = new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCDay();
+              const dayType = kstDay === 6 ? "saturday" : kstDay === 0 ? "sunday" : null;
+              const todayRecs = dayType
+                ? weekendRecs.filter((r) => r.day_of_week === dayType)
+                : weekendRecs.slice(0, 3);
+              if (todayRecs.length === 0) return null;
+              const sectionLabel = kstDay === 6
+                ? "오늘 (토) 추천 미션"
+                : kstDay === 0
+                  ? "오늘 (일) 추천 미션"
+                  : "이번 주 추천 미션";
+              return (
+                <div className="mt-5 rounded-2xl border border-[#7F77DD]/30 bg-[#EEEDFE] dark:bg-[#1e1a3a] p-4">
+                  <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-[#7F77DD] dark:text-[#AFA9EC]">
+                    ⭐ {sectionLabel}
+                  </p>
+                  <ul className="flex flex-col gap-1.5">
+                    {todayRecs.map((rec) => (
+                      <li key={rec.mission_id} className="flex items-center justify-between gap-2 text-sm">
+                        <span className="truncate text-[var(--text)]">{rec.title}</span>
+                        <span className="shrink-0 rounded-full bg-[linear-gradient(135deg,#7F77DD,#D4537E)] px-2 py-0.5 text-[10px] font-semibold text-white">
+                          보너스 +100 XP
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
+
+            <div className="mt-auto flex flex-col gap-3 pt-5 sm:flex-row">
+              <button
+                type="button"
+                className="inline-flex w-full items-center justify-center rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[var(--bg)] transition-opacity hover:opacity-95 sm:w-auto"
+                onClick={() => {
+                  const level = profile?.school_level === "elementary" ? "elementary" : profile?.school_level === "middle" ? "middle" : "all";
+                  router.push(`/student/weekend?type=creative&level=${level}`);
+                }}
+              >
+                창의·융합 도전
+              </button>
+              <button
+                type="button"
+                className="inline-flex w-full items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] px-5 py-3 text-sm font-medium text-[var(--text)] transition-colors hover:border-[var(--accent)] sm:w-auto"
+                onClick={() => {
+                  const level = profile?.school_level === "elementary" ? "elementary" : profile?.school_level === "middle" ? "middle" : "all";
+                  router.push(`/student/weekend?type=character&level=${level}`);
+                }}
+              >
+                인성·협력 도전
+              </button>
             </div>
           </article>
 
@@ -610,6 +805,11 @@ export default function StudentDashboardPage() {
                     <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
                       <p className="text-xs text-[var(--text-muted)]">{studentHomeCopy.gradeLabel}</p>
                       <p className="mt-2 text-sm font-semibold text-[var(--text)]">{displayGradeLabel || studentHomeCopy.emptyValue}</p>
+                      {effectiveGrade?.is_preview && effectiveGrade.preview_message && (
+                        <p className="mt-2 inline-flex items-center gap-1 rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--accent)]">
+                          {effectiveGrade.preview_message}
+                        </p>
+                      )}
                     </div>
                     <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
                       <p className="text-xs text-[var(--text-muted)]">{studentHomeCopy.classLabel}</p>
@@ -647,14 +847,15 @@ export default function StudentDashboardPage() {
                             key={option.key}
                             type="button"
                             onClick={() => toggleInterestTag(option.key)}
-                            className={`inline-flex min-h-[42px] items-center justify-center rounded-full border px-4 py-2 text-sm transition ${
+                            className={`inline-flex min-h-[42px] items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-sm transition ${
                               selected
                                 ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
                                 : "border-[var(--border)] bg-[var(--card-soft)] text-[var(--text-muted)] hover:border-[var(--accent)]/60 hover:text-[var(--text)]"
                             }`}
                             aria-pressed={selected}
                           >
-                            {interestTagLabel(option.key)}
+                            <span aria-hidden>{option.emoji}</span>
+                            <span>{interestTagLabel(option.key)}</span>
                           </button>
                         );
                       })}
@@ -681,6 +882,22 @@ export default function StudentDashboardPage() {
                       >
                         {interestTagsSaving ? "\uC800\uC7A5 \uC911..." : "\uC800\uC7A5"}
                       </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-5">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h3 className="text-base font-semibold text-[var(--text)]">\uD83D\uDD14 \uC54C\uB9BC \uC124\uC815</h3>
+                        <p className="mt-1 text-sm text-[var(--text-muted)]">
+                          \uC0C8 \uBBF8\uC158\u00B7\uB9AC\uD3EC\uD2B8\u00B7\uC911\uC694 \uACF5\uC9C0\uB97C \uD478\uC2DC\uB85C \uBC1B\uC544\uBCF4\uC138\uC694.
+                          <br />
+                          iPhone\uC740 ''\uD648 \uD654\uBA74\uC5D0 \uCD94\uAC00'' \uD6C4\uC5D0\uB9CC \uC791\uB3D9\uD574\uC694.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-4">
+                      <PushSubscribeButton />
                     </div>
                   </div>
 

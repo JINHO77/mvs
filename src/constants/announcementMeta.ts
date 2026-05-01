@@ -1,10 +1,11 @@
 import type { BadgeVariant } from "@/components/ui/Badge";
 
-export type AnnouncementAudienceRole = "all" | "student" | "parent";
+export type AnnouncementAudienceRole = "all" | "student" | "parent" | "staff";
 export type AnnouncementTargetScope = "all" | "school_level" | "grade" | "class" | "student";
-export type AnnouncementCategory = "general" | "notice" | "homework" | "report";
+export type AnnouncementCategory = "general" | "report" | "urgent" | "event" | "schedule" | "consultation";
+export type AnnouncementPriority = "urgent" | "high" | "normal" | "low";
 export type AnnouncementDeliveryMode = "now" | "scheduled";
-export type SchoolLevel = "elem" | "mid" | "high";
+export type SchoolLevel = "elementary" | "middle" | "high";
 
 export const ANNOUNCEMENT_CATEGORY_OPTIONS: Array<{
   value: AnnouncementCategory;
@@ -12,9 +13,11 @@ export const ANNOUNCEMENT_CATEGORY_OPTIONS: Array<{
   badgeVariant: BadgeVariant;
 }> = [
   { value: "general", label: "일반", badgeVariant: "neutral" },
-  { value: "notice", label: "공지", badgeVariant: "info" },
-  { value: "homework", label: "숙제", badgeVariant: "warning" },
   { value: "report", label: "리포트", badgeVariant: "success" },
+  { value: "urgent", label: "긴급", badgeVariant: "danger" },
+  { value: "event", label: "행사", badgeVariant: "info" },
+  { value: "schedule", label: "일정", badgeVariant: "warning" },
+  { value: "consultation", label: "상담", badgeVariant: "neutral" },
 ];
 
 export const ANNOUNCEMENT_AUDIENCE_OPTIONS: Array<{
@@ -24,6 +27,7 @@ export const ANNOUNCEMENT_AUDIENCE_OPTIONS: Array<{
   { value: "all", label: "전체" },
   { value: "student", label: "학생" },
   { value: "parent", label: "학부모" },
+  { value: "staff", label: "교직원" },
 ];
 
 export const ANNOUNCEMENT_TARGET_SCOPE_OPTIONS: Array<{
@@ -38,8 +42,8 @@ export const ANNOUNCEMENT_TARGET_SCOPE_OPTIONS: Array<{
 ];
 
 export const SCHOOL_LEVEL_OPTIONS: Array<{ value: SchoolLevel; label: string }> = [
-  { value: "elem", label: "초등" },
-  { value: "mid", label: "중등" },
+  { value: "elementary", label: "초등" },
+  { value: "middle", label: "중등" },
   { value: "high", label: "고등" },
 ];
 
@@ -56,7 +60,7 @@ export function getSchoolLevelLabel(level: string | null | undefined): string {
 }
 
 export function getGradeOptions(level: SchoolLevel | ""): number[] {
-  if (level === "elem") return [1, 2, 3, 4, 5, 6];
-  if (level === "mid" || level === "high") return [1, 2, 3];
+  if (level === "elementary") return [1, 2, 3, 4, 5, 6];
+  if (level === "middle" || level === "high") return [1, 2, 3];
   return [1, 2, 3, 4, 5, 6];
 }

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 export type StudentSearchItem = {
   id: string;
   name: string | null;
-  school_level: "elem" | "mid" | "high" | null;
+  school_level: string | null;
   grade: number | null;
   class_label: string | null;
   student_no?: string | null;
@@ -20,28 +20,27 @@ type Props = {
 
 const DEBOUNCE_MS = 300;
 
-type SchoolLevelFilter = "" | "elem" | "mid" | "high";
+type SchoolLevelFilter = "" | "elementary" | "middle" | "high";
 
 type GradeOption = {
   value: string;
   label: string;
 };
 
-function schoolLevelLabel(level: StudentSearchItem["school_level"]): string {
-  if (level === "elem") return "\uCD08\uB4F1";
-  if (level === "mid") return "\uC911\uB4F1";
-  if (level === "high") return "\uACE0\uB4F1";
-  return "";
+const LEVEL_LABEL_MAP: Record<string, string> = { elementary: "초등", middle: "중등", high: "고등", elem: "초등", mid: "중등" };
+
+function schoolLevelLabel(level: string | null | undefined): string {
+  return LEVEL_LABEL_MAP[level ?? ""] ?? "";
 }
 
 function buildGradeOptions(level: SchoolLevelFilter): GradeOption[] {
-  if (level === "elem") {
+  if (level === "elementary") {
     return Array.from({ length: 6 }, (_, index) => {
       const grade = index + 1;
       return { value: String(grade), label: `${grade}\uD559\uB144` };
     });
   }
-  if (level === "mid" || level === "high") {
+  if (level === "middle" || level === "high") {
     return Array.from({ length: 3 }, (_, index) => {
       const grade = index + 1;
       return { value: String(grade), label: `${grade}\uD559\uB144` };
@@ -50,8 +49,8 @@ function buildGradeOptions(level: SchoolLevelFilter): GradeOption[] {
 
   const allOptions: GradeOption[] = [];
   for (const [schoolLevel, maxGrade] of [
-    ["elem", 6],
-    ["mid", 3],
+    ["elementary", 6],
+    ["middle", 3],
     ["high", 3],
   ] as const) {
     for (let grade = 1; grade <= maxGrade; grade += 1) {
@@ -146,8 +145,8 @@ export default function StudentSearchSelect({ students, selectedStudentId, onSel
             disabled={disabled}
           >
             <option value="">{"\uC804\uCCB4"}</option>
-            <option value="elem">{"\uCD08\uB4F1"}</option>
-            <option value="mid">{"\uC911\uB4F1"}</option>
+            <option value="elementary">{"\uCD08\uB4F1"}</option>
+            <option value="middle">{"\uC911\uB4F1"}</option>
             <option value="high">{"\uACE0\uB4F1"}</option>
           </select>
         </label>

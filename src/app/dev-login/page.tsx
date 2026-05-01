@@ -12,8 +12,8 @@ export default function DevLoginPage() {
   const devMode = process.env.NEXT_PUBLIC_DEV_MODE === "true";
   const [selectedRole, setSelectedRole] = useState<"student" | "parent" | "staff">("student");
 
-  const [email, setEmail] = useState("yjh4889@gmail.com");
-  const [password, setPassword] = useState("mvs-dev-1234!");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -34,7 +34,48 @@ export default function DevLoginPage() {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (error) throw error;
-      router.replace("/dashboard");
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error(AUTH_TEXT.loginFailed);
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role, account_status")
+        .eq("id", user.id)
+        .maybeSingle<{ role: string; account_status: string }>();
+
+      if (!profile) {
+        await supabase.auth.signOut();
+        setMsg("프로필이 없는 계정입니다. 다시 가입해 주세요.");
+        return;
+      }
+
+      if (profile.account_status === "blocked") {
+        await supabase.auth.signOut();
+        setMsg("이용이 제한된 계정입니다. 원장님에게 문의해 주세요.");
+        return;
+      }
+
+      router.refresh();
+
+      if (profile.account_status === "pending") {
+        router.push("/pending-approval");
+        return;
+      }
+
+      const dest =
+        profile.role === "student"
+          ? "/student"
+          : profile.role === "parent"
+            ? "/parent"
+            : profile.role === "owner"
+              ? "/owner"
+              : profile.role === "teacher"
+                ? "/teacher"
+                : "/";
+      router.push(dest);
     } catch (e: unknown) {
       setMsg(e instanceof Error ? e.message : AUTH_TEXT.loginFailed);
     } finally {
@@ -47,7 +88,7 @@ export default function DevLoginPage() {
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${window.location.origin}/auth/reset`,
+        redirectTo: `${window.location.origin}/reset-password`,
       });
       if (error) throw error;
       setMsg(AUTH_TEXT.resetEmailSent);

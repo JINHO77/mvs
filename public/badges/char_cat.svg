@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 110">
+  <!-- Tail -->
+  <path d="M72,108 Q88,92 84,76 Q80,64 72,68" stroke="#EA580C" stroke-width="10" fill="none" stroke-linecap="round"/>
+  <!-- Body -->
+  <ellipse cx="48" cy="96" rx="23" ry="13" fill="#F97316"/>
+  <!-- Belly stripe -->
+  <ellipse cx="48" cy="97" rx="14" ry="8" fill="#FED7AA"/>
+  <!-- Body stripes -->
+  <path d="M34,90 Q48,85 62,90" stroke="#C2410C" stroke-width="2" fill="none"/>
+  <!-- Left ear -->
+  <polygon points="26,40 18,14 40,30" fill="#F97316"/>
+  <polygon points="27,39 22,18 38,30" fill="#FDA4AF"/>
+  <!-- Right ear -->
+  <polygon points="70,40 78,14 56,30" fill="#F97316"/>
+  <polygon points="69,39 74,18 58,30" fill="#FDA4AF"/>
+  <!-- Head -->
+  <circle cx="48" cy="60" r="28" fill="#F97316"/>
+  <!-- Face stripes -->
+  <path d="M26,46 Q30,52 26,58" stroke="#C2410C" stroke-width="2" fill="none"/>
+  <path d="M70,46 Q66,52 70,58" stroke="#C2410C" stroke-width="2" fill="none"/>
+  <!-- Muzzle -->
+  <ellipse cx="48" cy="69" rx="16" ry="12" fill="#FED7AA"/>
+  <!-- Cheeks -->
+  <circle cx="30" cy="65" r="7" fill="#FCA5A5" opacity="0.45"/>
+  <circle cx="66" cy="65" r="7" fill="#FCA5A5" opacity="0.45"/>
+  <!-- Eyes (slit pupils) -->
+  <ellipse cx="39" cy="56" rx="6" ry="6.5" fill="#0F172A"/>
+  <ellipse cx="57" cy="56" rx="6" ry="6.5" fill="#0F172A"/>
+  <ellipse cx="39" cy="56" rx="2.2" ry="5.5" fill="#78350F"/>
+  <ellipse cx="57" cy="56" rx="2.2" ry="5.5" fill="#78350F"/>
+  <circle cx="40.5" cy="54" r="1.8" fill="white"/>
+  <circle cx="58.5" cy="54" r="1.8" fill="white"/>
+  <!-- Nose -->
+  <polygon points="48,66 44,63 52,63" fill="#EC4899"/>
+  <!-- Whiskers -->
+  <line x1="14" y1="65" x2="36" y2="67" stroke="#FEF9C3" stroke-width="1.3"/>
+  <line x1="14" y1="70" x2="36" y2="70" stroke="#FEF9C3" stroke-width="1.3"/>
+  <line x1="60" y1="67" x2="82" y2="65" stroke="#FEF9C3" stroke-width="1.3"/>
+  <line x1="60" y1="70" x2="82" y2="70" stroke="#FEF9C3" stroke-width="1.3"/>
+  <!-- Fire sparkle -->
+  <text x="64" y="46" font-size="14">🔥</text>
+</svg>

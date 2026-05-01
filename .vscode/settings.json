@@ -1,5 +1,7 @@
 {
   "files.encoding": "utf8",
   "files.autoGuessEncoding": false,
-  "files.eol": "\n"
+  "files.eol": "\n",
+  "css.validate": false,
+  "scss.validate": false
 }

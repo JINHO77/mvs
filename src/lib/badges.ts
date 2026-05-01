@@ -1,11 +1,13 @@
-﻿import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "@/lib/supabaseClient";
 import { normalizeUiText } from "@/lib/uiText";
+import { getBadgeMetadata } from "@/constants/badgeMetadata";
 import type {
   BadgeDefinition,
   BadgeKey,
   BadgeProgress,
   BadgeShowcase,
   BadgeSubject,
+  BadgeType,
   EarnedBadgeSummary,
 } from "@/types/badges";
 import type { GeneratedMission } from "@/types/missions";
@@ -15,6 +17,9 @@ type BadgeSubjectFilter = BadgeSubject | "all";
 type StudentBadgeRow = {
   badge_id: string | null;
   badge_key: BadgeKey;
+  title?: string | null;
+  icon_url?: string | null;
+  description?: string | null;
   subject: string;
   related_mission_id: string | null;
   earned_at: string | null;
@@ -49,12 +54,10 @@ type BadgeComputationContext = {
   hardMissionCount: number;
   mathMissionCount: number;
   englishMissionCount: number;
-  graphMissionCount: number;
-  geometryMissionCount: number;
-  logicMissionCount: number;
-  readingMissionCount: number;
-  speakingMissionCount: number;
-  englishStudyDayStreak: number;
+  weekendMissionCount: number;
+  dailyStreak: number;
+  totalXp: number;
+  currentLevel: number;
 };
 
 type StudentBadgeUpsertRow = {
@@ -70,161 +73,450 @@ type StudentBadgeUpsertRow = {
 };
 
 const BADGE_DEFINITIONS: BadgeDefinition[] = [
+  // ── COMMON (10) ──────────────────────────────
   {
-    key: "first_mission_complete",
+    key: "start_journey",
     subject: "common",
-    title: "첫 미션 완료",
-    name: "첫 미션 완료",
-    description: "첫 번째 미션을 완료해 학습 여정을 시작했어요.",
+    title: "첫 걸음의 설렘",
+    name: "첫 걸음의 설렘",
+    description: "첫 미션을 완료해 학습 여정을 시작했어요.",
     category: "starter",
-    iconUrl: "/badges/first-step.svg",
+    iconUrl: "/badges/first_step.svg",
     conditionType: "mission_complete_count",
     conditionValue: 1,
     isActive: true,
   },
   {
-    key: "three_correct_streak",
+    key: "first_math",
+    subject: "math",
+    title: "숫자와의 첫 만남",
+    name: "숫자와의 첫 만남",
+    description: "첫 번째 수학 미션을 완료했어요.",
+    category: "starter",
+    iconUrl: "/badges/math_lover.svg",
+    conditionType: "math_complete_count",
+    conditionValue: 1,
+    isActive: true,
+  },
+  {
+    key: "first_english",
+    subject: "english",
+    title: "영어와의 첫 대화",
+    name: "영어와의 첫 대화",
+    description: "첫 번째 영어 미션을 완료했어요.",
+    category: "starter",
+    iconUrl: "/badges/eng_lover.svg",
+    conditionType: "english_complete_count",
+    conditionValue: 1,
+    isActive: true,
+  },
+  {
+    key: "first_weekend",
     subject: "common",
-    title: "3연속 정답",
-    name: "3연속 정답",
-    description: "채점 단계에서 3번 연속 정답을 기록해 보세요.",
+    title: "첫 주말 탐험",
+    name: "첫 주말 탐험",
+    description: "첫 주말 챌린지를 완료했어요.",
+    category: "weekend",
+    iconUrl: "/badges/explorer.svg",
+    conditionType: "weekend_complete_count",
+    conditionValue: 1,
+    isActive: true,
+  },
+  {
+    key: "char_white_rabbit",
+    subject: "common",
+    title: "하얀 토끼",
+    name: "하얀 토끼",
+    description: "첫 미션 완료 — 항상 당신 옆에서 응원하는 첫 번째 친구예요.",
+    category: "starter",
+    iconUrl: "/badges/char_bunny.svg",
+    conditionType: "mission_complete_count",
+    conditionValue: 1,
+    isActive: true,
+    badgeType: "character",
+  },
+  {
+    key: "streak_3",
+    subject: "common",
+    title: "3일의 약속",
+    name: "3일의 약속",
+    description: "3일 연속 미션을 완료했어요.",
     category: "streak",
-    iconUrl: "/badges/streak-flare.svg",
-    conditionType: "correct_step_streak",
+    iconUrl: "/badges/streak_3.svg",
+    conditionType: "daily_streak",
     conditionValue: 3,
     isActive: true,
   },
   {
-    key: "five_correct_streak",
+    key: "missions_5",
     subject: "common",
-    title: "5연속 정답",
-    name: "5연속 정답",
-    description: "채점 단계에서 5번 연속 정답을 기록해 보세요.",
-    category: "streak",
-    iconUrl: "/badges/streak-flare.svg",
-    conditionType: "correct_step_streak",
+    title: "귀여운 새싹",
+    name: "귀여운 새싹",
+    description: "미션 5개를 완료했어요.",
+    category: "missions",
+    iconUrl: "/badges/first_step.svg",
+    conditionType: "mission_complete_count",
     conditionValue: 5,
     isActive: true,
   },
   {
-    key: "explorer_three_units",
+    key: "missions_10",
     subject: "common",
-    title: "단원 탐험가",
-    name: "단원 탐험가",
-    description: "서로 다른 단원 3개에서 미션을 완료해 보세요.",
-    category: "exploration",
-    iconUrl: "/badges/unit-explorer.svg",
-    conditionType: "distinct_unit_complete_count",
-    conditionValue: 3,
+    title: "꾸준한 배움이",
+    name: "꾸준한 배움이",
+    description: "미션 10개를 완료했어요.",
+    category: "missions",
+    iconUrl: "/badges/first_step.svg",
+    conditionType: "mission_complete_count",
+    conditionValue: 10,
     isActive: true,
   },
   {
-    key: "hard_challenger",
+    key: "xp_100",
     subject: "common",
-    title: "난이도 도전자",
-    name: "난이도 도전자",
-    description: "hard 또는 challenge 미션을 3개 완료해 보세요.",
+    title: "반짝이는 시작",
+    name: "반짝이는 시작",
+    description: "누적 XP 100을 달성했어요.",
+    category: "xp",
+    iconUrl: "/badges/first_step.svg",
+    conditionType: "total_xp_threshold",
+    conditionValue: 100,
+    isActive: true,
+  },
+  {
+    key: "xp_500",
+    subject: "common",
+    title: "빛나는 성장",
+    name: "빛나는 성장",
+    description: "누적 XP 500을 달성했어요.",
+    category: "xp",
+    iconUrl: "/badges/first_step.svg",
+    conditionType: "total_xp_threshold",
+    conditionValue: 500,
+    isActive: true,
+  },
+  // ── UNCOMMON (8) ─────────────────────────────
+  {
+    key: "hard_3",
+    subject: "common",
+    title: "도전의 첫 관문",
+    name: "도전의 첫 관문",
+    description: "Hard 미션 3개를 완료했어요.",
     category: "challenge",
-    iconUrl: "/badges/challenge-crest.svg",
+    iconUrl: "/badges/hard_master.svg",
     conditionType: "difficulty_complete_count",
     conditionValue: 3,
     isActive: true,
   },
   {
-    key: "math_first_step",
-    subject: "math",
-    title: "수학 첫걸음",
-    name: "수학 첫걸음",
-    description: "첫 번째 수학 미션을 완료하면 열려요.",
-    category: "starter",
-    iconUrl: "/badges/first-step.svg",
-    conditionType: "mission_complete_count",
-    conditionValue: 1,
+    key: "level_5",
+    subject: "common",
+    title: "5레벨 각성",
+    name: "5레벨 각성",
+    description: "레벨 5에 도달했어요.",
+    category: "level",
+    iconUrl: "/badges/first_step.svg",
+    conditionType: "level_reach",
+    conditionValue: 5,
     isActive: true,
   },
   {
-    key: "graph_explorer",
-    subject: "math",
-    title: "그래프 탐험가",
-    name: "그래프 탐험가",
-    description: "그래프나 함수와 연결된 수학 미션을 3개 완료해 보세요.",
-    category: "graph",
-    iconUrl: "/badges/graph-wave.svg",
-    conditionType: "keyword_mission_complete_count",
-    conditionValue: 3,
-    isActive: true,
-  },
-  {
-    key: "geometry_starter",
-    subject: "math",
-    title: "도형 스타터",
-    name: "도형 스타터",
-    description: "도형과 공간 감각을 다루는 수학 미션을 2개 완료해 보세요.",
-    category: "geometry",
-    iconUrl: "/badges/geometry-gem.svg",
-    conditionType: "keyword_mission_complete_count",
-    conditionValue: 2,
-    isActive: true,
-  },
-  {
-    key: "logic_builder",
-    subject: "math",
-    title: "논리 빌더",
-    name: "논리 빌더",
-    description: "식, 방정식, 확률 같은 논리형 수학 미션을 3개 완료해 보세요.",
-    category: "logic",
-    iconUrl: "/badges/logic-circuit.svg",
-    conditionType: "keyword_mission_complete_count",
-    conditionValue: 3,
-    isActive: true,
-  },
-  {
-    key: "english_first_step",
-    subject: "english",
-    title: "영어 첫걸음",
-    name: "영어 첫걸음",
-    description: "첫 번째 영어 미션을 완료하면 열려요.",
-    category: "starter",
-    iconUrl: "/badges/first-step.svg",
-    conditionType: "mission_complete_count",
-    conditionValue: 1,
-    isActive: true,
-  },
-  {
-    key: "reader_starter",
-    subject: "english",
-    title: "리더 스타터",
-    name: "리더 스타터",
-    description: "읽기 중심 영어 미션을 2개 완료해 보세요.",
-    category: "reading",
-    iconUrl: "/badges/reading-bloom.svg",
-    conditionType: "keyword_mission_complete_count",
-    conditionValue: 2,
-    isActive: true,
-  },
-  {
-    key: "speaker_starter",
-    subject: "english",
-    title: "스피커 스타터",
-    name: "스피커 스타터",
-    description: "말하기와 표현 중심 영어 미션을 2개 완료해 보세요.",
-    category: "speaking",
-    iconUrl: "/badges/speaking-spark.svg",
-    conditionType: "keyword_mission_complete_count",
-    conditionValue: 2,
-    isActive: true,
-  },
-  {
-    key: "streak_reader",
-    subject: "english",
-    title: "꾸준한 리더",
-    name: "꾸준한 리더",
-    description: "영어 미션을 3일 연속 완료해 보세요.",
+    key: "streak_7",
+    subject: "common",
+    title: "일주일의 전사",
+    name: "일주일의 전사",
+    description: "7일 연속 미션을 완료했어요.",
     category: "streak",
-    iconUrl: "/badges/streak-flare.svg",
-    conditionType: "study_day_streak",
-    conditionValue: 3,
+    iconUrl: "/badges/streak_7.svg",
+    conditionType: "daily_streak",
+    conditionValue: 7,
     isActive: true,
+  },
+  {
+    key: "char_english_owl",
+    subject: "english",
+    title: "영어 올빼미",
+    name: "영어 올빼미",
+    description: "영어 미션 20개 완료 — 졸업 모자를 쓴 학식 높은 올빼미예요.",
+    category: "reading",
+    iconUrl: "/badges/char_owl.svg",
+    conditionType: "english_complete_count",
+    conditionValue: 20,
+    isActive: true,
+    badgeType: "character",
+  },
+  {
+    key: "char_math_fox",
+    subject: "math",
+    title: "수학 여우",
+    name: "수학 여우",
+    description: "수학 미션 20개 완료 — Σ 기호가 자랑인 영리한 여우예요.",
+    category: "exploration",
+    iconUrl: "/badges/char_fox.svg",
+    conditionType: "math_complete_count",
+    conditionValue: 20,
+    isActive: true,
+    badgeType: "character",
+  },
+  {
+    key: "char_panda",
+    subject: "common",
+    title: "판다",
+    name: "판다",
+    description: "미션 30개 완료 — 꾸준함이 최고라는 걸 아는 느긋한 판다예요.",
+    category: "missions",
+    iconUrl: "/badges/char_panda.svg",
+    conditionType: "mission_complete_count",
+    conditionValue: 30,
+    isActive: true,
+    badgeType: "character",
+  },
+  {
+    key: "missions_30",
+    subject: "common",
+    title: "열정의 학습자",
+    name: "열정의 학습자",
+    description: "미션 30개를 완료했어요.",
+    category: "missions",
+    iconUrl: "/badges/explorer.svg",
+    conditionType: "mission_complete_count",
+    conditionValue: 30,
+    isActive: true,
+  },
+  {
+    key: "xp_1000",
+    subject: "common",
+    title: "은빛 학자",
+    name: "은빛 학자",
+    description: "누적 XP 1000을 달성했어요.",
+    category: "xp",
+    iconUrl: "/badges/first_step.svg",
+    conditionType: "total_xp_threshold",
+    conditionValue: 1000,
+    isActive: true,
+  },
+  // ── RARE (8) ─────────────────────────────────
+  {
+    key: "weekend_10",
+    subject: "common",
+    title: "주말의 모험가",
+    name: "주말의 모험가",
+    description: "주말 챌린지 10개를 완료했어요.",
+    category: "weekend",
+    iconUrl: "/badges/explorer.svg",
+    conditionType: "weekend_complete_count",
+    conditionValue: 10,
+    isActive: true,
+  },
+  {
+    key: "char_explorer_bear",
+    subject: "common",
+    title: "탐험 곰",
+    name: "탐험 곰",
+    description: "단원 10개 탐험 — 나침반을 들고 새로운 단원을 탐험하는 모험가예요.",
+    category: "exploration",
+    iconUrl: "/badges/char_bear.svg",
+    conditionType: "distinct_unit_complete_count",
+    conditionValue: 10,
+    isActive: true,
+    badgeType: "character",
+  },
+  {
+    key: "level_10",
+    subject: "common",
+    title: "10레벨 베테랑",
+    name: "10레벨 베테랑",
+    description: "레벨 10에 도달했어요.",
+    category: "level",
+    iconUrl: "/badges/hard_master.svg",
+    conditionType: "level_reach",
+    conditionValue: 10,
+    isActive: true,
+  },
+  {
+    key: "char_fire_cat",
+    subject: "common",
+    title: "불꽃 고양이",
+    name: "불꽃 고양이",
+    description: "30일 연속 학습 — 털 끝에서 스파크가 튀는 에너지 넘치는 고양이예요.",
+    category: "streak",
+    iconUrl: "/badges/char_cat.svg",
+    conditionType: "daily_streak",
+    conditionValue: 30,
+    isActive: true,
+    badgeType: "character",
+  },
+  {
+    key: "streak_30",
+    subject: "common",
+    title: "한 달의 기적",
+    name: "한 달의 기적",
+    description: "30일 연속 미션을 완료했어요.",
+    category: "streak",
+    iconUrl: "/badges/streak_7.svg",
+    conditionType: "daily_streak",
+    conditionValue: 30,
+    isActive: true,
+  },
+  {
+    key: "bilingual_30",
+    subject: "common",
+    title: "양손잡이 학자",
+    name: "양손잡이 학자",
+    description: "수학과 영어 미션 각각 30개 이상 완료 — 두 과목을 자유롭게 오가는 학자예요.",
+    category: "bilingual",
+    iconUrl: "/badges/bilingual.svg",
+    conditionType: "bilingual_complete_count",
+    conditionValue: 30,
+    isActive: true,
+  },
+  {
+    key: "missions_100",
+    subject: "common",
+    title: "100개의 증거",
+    name: "100개의 증거",
+    description: "미션 100개를 완료했어요.",
+    category: "missions",
+    iconUrl: "/badges/hard_master.svg",
+    conditionType: "mission_complete_count",
+    conditionValue: 100,
+    isActive: true,
+  },
+  {
+    key: "xp_3000",
+    subject: "common",
+    title: "다이아의 광채",
+    name: "다이아의 광채",
+    description: "누적 XP 3000을 달성했어요.",
+    category: "xp",
+    iconUrl: "/badges/streak_7.svg",
+    conditionType: "total_xp_threshold",
+    conditionValue: 3000,
+    isActive: true,
+  },
+  // ── EPIC (6) ─────────────────────────────────
+  {
+    key: "level_15",
+    subject: "common",
+    title: "15레벨 엘리트",
+    name: "15레벨 엘리트",
+    description: "레벨 15에 도달했어요.",
+    category: "level",
+    iconUrl: "/badges/hard_master.svg",
+    conditionType: "level_reach",
+    conditionValue: 15,
+    isActive: true,
+  },
+  {
+    key: "hard_30",
+    subject: "common",
+    title: "역경의 정복자",
+    name: "역경의 정복자",
+    description: "Hard 미션 30개를 완료했어요.",
+    category: "challenge",
+    iconUrl: "/badges/hard_master.svg",
+    conditionType: "difficulty_complete_count",
+    conditionValue: 30,
+    isActive: true,
+  },
+  {
+    key: "char_lion_king",
+    subject: "common",
+    title: "사자왕",
+    name: "사자왕",
+    description: "Hard 미션 30개 완료 — 어려운 도전을 정복한 자만이 얻는 왕의 칭호예요.",
+    category: "challenge",
+    iconUrl: "/badges/char_lion.svg",
+    conditionType: "difficulty_complete_count",
+    conditionValue: 30,
+    isActive: true,
+    badgeType: "character",
+  },
+  {
+    key: "streak_60",
+    subject: "common",
+    title: "60일의 결의",
+    name: "60일의 결의",
+    description: "60일 연속 미션을 완료했어요.",
+    category: "streak",
+    iconUrl: "/badges/streak_7.svg",
+    conditionType: "daily_streak",
+    conditionValue: 60,
+    isActive: true,
+  },
+  {
+    key: "missions_300",
+    subject: "common",
+    title: "300개의 왕관",
+    name: "300개의 왕관",
+    description: "미션 300개를 완료했어요.",
+    category: "missions",
+    iconUrl: "/badges/hard_master.svg",
+    conditionType: "mission_complete_count",
+    conditionValue: 300,
+    isActive: true,
+  },
+  {
+    key: "xp_10000",
+    subject: "common",
+    title: "만 년의 학자",
+    name: "만 년의 학자",
+    description: "누적 XP 10000을 달성했어요.",
+    category: "xp",
+    iconUrl: "/badges/hard_master.svg",
+    conditionType: "total_xp_threshold",
+    conditionValue: 10000,
+    isActive: true,
+  },
+  // ── LEGENDARY (4) ────────────────────────────
+  {
+    key: "streak_365",
+    subject: "common",
+    title: "1년 개근의 신화",
+    name: "1년 개근의 신화",
+    description: "365일 연속 미션을 완료했어요.",
+    category: "streak",
+    iconUrl: "/badges/streak_7.svg",
+    conditionType: "daily_streak",
+    conditionValue: 365,
+    isActive: true,
+  },
+  {
+    key: "missions_1000",
+    subject: "common",
+    title: "천 개의 발자국",
+    name: "천 개의 발자국",
+    description: "미션 1000개를 완료했어요.",
+    category: "missions",
+    iconUrl: "/badges/hard_master.svg",
+    conditionType: "mission_complete_count",
+    conditionValue: 1000,
+    isActive: true,
+  },
+  {
+    key: "xp_100000",
+    subject: "common",
+    title: "불멸의 학자",
+    name: "불멸의 학자",
+    description: "누적 XP 100000을 달성했어요.",
+    category: "xp",
+    iconUrl: "/badges/hard_master.svg",
+    conditionType: "total_xp_threshold",
+    conditionValue: 100000,
+    isActive: true,
+  },
+  {
+    key: "char_legendary_dragon",
+    subject: "common",
+    title: "전설의 드래곤",
+    name: "전설의 드래곤",
+    description: "누적 XP 100000 달성 — 가장 높은 곳에 올라선 자만이 만나는 전설이에요.",
+    category: "challenge",
+    iconUrl: "/badges/char_dragon.svg",
+    conditionType: "total_xp_threshold",
+    conditionValue: 100000,
+    isActive: true,
+    badgeType: "character",
   },
 ];
 
@@ -234,12 +526,6 @@ const FEATURED_BADGE_KEYS: Record<BadgeSubjectFilter, BadgeKey[]> = {
   math: BADGE_DEFINITIONS.filter((badge) => badge.subject === "common" || badge.subject === "math").map((badge) => badge.key),
   english: BADGE_DEFINITIONS.filter((badge) => badge.subject === "common" || badge.subject === "english").map((badge) => badge.key),
 };
-
-const GRAPH_KEYWORDS = ["graph", "function", "slope", "coordinate", "linear", "quadratic", "그래프", "함수", "좌표", "기울기", "일차함수", "이차함수"];
-const GEOMETRY_KEYWORDS = ["geometry", "triangle", "circle", "angle", "shape", "scale", "pythagorean", "도형", "삼각형", "원", "각", "닮음", "축척", "피타고라스"];
-const LOGIC_KEYWORDS = ["expression", "equation", "inequality", "probability", "logic", "ratio", "문자와 식", "식", "방정식", "연립방정식", "부등식", "경우의 수", "확률", "비와 비율"];
-const READING_KEYWORDS = ["read", "reading", "reader", "notice", "poster", "story", "article", "announce", "독해", "읽기", "안내문", "포스터", "글"];
-const SPEAKING_KEYWORDS = ["speak", "speaking", "speaker", "conversation", "dialogue", "opinion", "presentation", "talk", "say", "말하기", "대화", "표현", "발표", "의견"];
 
 const BADGE_DEFINITION_MAP = new Map(BADGE_DEFINITIONS.map((badge) => [badge.key, badge]));
 
@@ -277,10 +563,11 @@ function missionKeywordSource(mission: Pick<GeneratedMission, "title" | "interes
     .join(" ");
 }
 
-function missionMatchesAny(mission: Pick<GeneratedMission, "title" | "interest_tags" | "mission_json">, keywords: string[]): boolean {
-  const source = missionKeywordSource(mission);
-  return keywords.some((keyword) => source.includes(keyword.toLowerCase()));
+// kept for potential future keyword-based logic
+function _missionKeywordSource(mission: Parameters<typeof missionKeywordSource>[0]): string {
+  return missionKeywordSource(mission);
 }
+void _missionKeywordSource;
 
 function toKstDateKey(value: string): string {
   const date = new Date(value);
@@ -291,6 +578,14 @@ function toKstDateKey(value: string): string {
     month: "2-digit",
     day: "2-digit",
   }).format(date);
+}
+
+function isWeekendDate(dateStr: string): boolean {
+  const kst = toKstDateKey(dateStr);
+  if (!kst) return false;
+  const d = new Date(`${kst}T00:00:00+09:00`);
+  const day = d.getDay();
+  return day === 0 || day === 6;
 }
 
 function calculateDayStreak(values: string[]): number {
@@ -331,10 +626,14 @@ function calculateCorrectStepStreak(rows: MissionStepAttemptRow[]): number {
 }
 
 function progressUnitLabel(badge: BadgeDefinition): string {
-  if (badge.conditionType === "correct_step_streak") return "연속 정답";
-  if (badge.conditionType === "distinct_unit_complete_count") return "단원";
-  if (badge.conditionType === "study_day_streak") return "일";
-  return "개";
+  switch (badge.conditionType) {
+    case "correct_step_streak": return "연속 정답";
+    case "distinct_unit_complete_count": return "단원";
+    case "daily_streak": return "일";
+    case "level_reach": return "레벨";
+    case "total_xp_threshold": return "XP";
+    default: return "개";
+  }
 }
 
 function buildProgressLabel(badge: BadgeDefinition, progressValue: number): string {
@@ -373,10 +672,35 @@ async function fetchBadgeIdMap(): Promise<Map<BadgeKey, string>> {
   return new Map((data ?? []).map((row) => [row.badge_key, row.id]));
 }
 
+type BadgeDbMetaRow = {
+  badge_key: string;
+  title: string | null;
+  description: string | null;
+  badge_type: string | null;
+  icon_url: string | null;
+  subject: string | null;
+  rarity: string | null;
+  character_name: string | null;
+  character_emoji: string | null;
+  character_story: string | null;
+  badge_color: string | null;
+};
+
+async function fetchBadgesMetaForKeys(keys: string[]): Promise<Map<string, BadgeDbMetaRow>> {
+  if (keys.length === 0) return new Map();
+  const { data, error } = await supabase
+    .from("badges")
+    .select("badge_key,title,description,badge_type,icon_url,subject,rarity,character_name,character_emoji,character_story,badge_color")
+    .in("badge_key", keys)
+    .returns<BadgeDbMetaRow[]>();
+  if (error) return new Map();
+  return new Map((data ?? []).map((row) => [row.badge_key, row]));
+}
+
 async function fetchStudentBadgeRows(studentId: string): Promise<StudentBadgeRow[]> {
   const modernRes = await supabase
     .from("student_badges")
-    .select("badge_id,badge_key,subject,related_mission_id,earned_at,progress_value,is_earned,updated_at")
+    .select("badge_id,badge_key,title,icon_url,description,subject,related_mission_id,earned_at,progress_value,is_earned,updated_at")
     .eq("student_id", studentId)
     .returns<StudentBadgeRow[]>();
 
@@ -497,14 +821,29 @@ async function fetchCorrectStepAttempts(studentId: string): Promise<MissionStepA
   }));
 }
 
+async function fetchStudentXpData(studentId: string): Promise<{ totalXp: number; currentLevel: number }> {
+  const { data, error } = await supabase
+    .from("student_xp_summary")
+    .select("total_xp,current_level")
+    .eq("student_id", studentId)
+    .single();
+  if (error || !data) return { totalXp: 0, currentLevel: 0 };
+  return {
+    totalXp: (data as { total_xp?: number | null }).total_xp ?? 0,
+    currentLevel: (data as { current_level?: number | null }).current_level ?? 0,
+  };
+}
+
 async function buildBadgeComputationContext(studentId: string): Promise<BadgeComputationContext> {
-  const [completedMissions, stepAttempts] = await Promise.all([
+  const [completedMissions, stepAttempts, xpData] = await Promise.all([
     fetchCompletedMissions(studentId),
     fetchCorrectStepAttempts(studentId),
+    fetchStudentXpData(studentId).catch(() => ({ totalXp: 0, currentLevel: 0 })),
   ]);
 
   const mathMissions = completedMissions.filter((mission) => mission.subject === "math");
   const englishMissions = completedMissions.filter((mission) => mission.subject === "english");
+  const weekendMissions = completedMissions.filter((mission) => isWeekendDate(mission.completedAt));
 
   return {
     completedMissions,
@@ -514,42 +853,37 @@ async function buildBadgeComputationContext(studentId: string): Promise<BadgeCom
     hardMissionCount: completedMissions.filter((mission) => mission.difficulty === "hard" || mission.difficulty === "challenge").length,
     mathMissionCount: mathMissions.length,
     englishMissionCount: englishMissions.length,
-    graphMissionCount: mathMissions.filter((mission) => missionMatchesAny(mission, GRAPH_KEYWORDS)).length,
-    geometryMissionCount: mathMissions.filter((mission) => missionMatchesAny(mission, GEOMETRY_KEYWORDS)).length,
-    logicMissionCount: mathMissions.filter((mission) => missionMatchesAny(mission, LOGIC_KEYWORDS)).length,
-    readingMissionCount: englishMissions.filter((mission) => missionMatchesAny(mission, READING_KEYWORDS)).length,
-    speakingMissionCount: englishMissions.filter((mission) => missionMatchesAny(mission, SPEAKING_KEYWORDS)).length,
-    englishStudyDayStreak: calculateDayStreak(englishMissions.map((mission) => mission.completedAt)),
+    weekendMissionCount: weekendMissions.length,
+    dailyStreak: calculateDayStreak(completedMissions.map((mission) => mission.completedAt)),
+    totalXp: xpData.totalXp,
+    currentLevel: xpData.currentLevel,
   };
 }
 
 function computeProgressValue(badge: BadgeDefinition, context: BadgeComputationContext): number {
-  switch (badge.key) {
-    case "first_mission_complete":
+  switch (badge.conditionType) {
+    case "mission_complete_count":
       return context.totalCompletedCount;
-    case "three_correct_streak":
-    case "five_correct_streak":
-      return context.longestCorrectStepStreak;
-    case "explorer_three_units":
-      return context.completedUnitCount;
-    case "hard_challenger":
-      return context.hardMissionCount;
-    case "math_first_step":
+    case "math_complete_count":
       return context.mathMissionCount;
-    case "graph_explorer":
-      return context.graphMissionCount;
-    case "geometry_starter":
-      return context.geometryMissionCount;
-    case "logic_builder":
-      return context.logicMissionCount;
-    case "english_first_step":
+    case "english_complete_count":
       return context.englishMissionCount;
-    case "reader_starter":
-      return context.readingMissionCount;
-    case "speaker_starter":
-      return context.speakingMissionCount;
-    case "streak_reader":
-      return context.englishStudyDayStreak;
+    case "weekend_complete_count":
+      return context.weekendMissionCount;
+    case "difficulty_complete_count":
+      return context.hardMissionCount;
+    case "distinct_unit_complete_count":
+      return context.completedUnitCount;
+    case "daily_streak":
+      return context.dailyStreak;
+    case "total_xp_threshold":
+      return context.totalXp;
+    case "level_reach":
+      return context.currentLevel;
+    case "bilingual_complete_count":
+      return Math.min(context.mathMissionCount, context.englishMissionCount);
+    case "correct_step_streak":
+      return context.longestCorrectStepStreak;
     default:
       return 0;
   }
@@ -728,7 +1062,80 @@ export async function awardBadgeIfEligible(studentId: string, badgeKey: BadgeKey
 }
 
 export async function getStudentBadgeShowcase(studentId?: string, subject: BadgeSubjectFilter = "all"): Promise<BadgeShowcase> {
-  const progress = await getBadgeProgress(studentId, subject);
+  const resolvedStudentId = await getResolvedStudentId(studentId);
+  const dbRows = await fetchStudentBadgeRows(resolvedStudentId);
+
+  if (dbRows.length > 0) {
+    const rowMap = new Map(dbRows.map((row) => [row.badge_key, row]));
+    const definitions = filterBadgeDefinitions(subject);
+
+    const knownProgress = definitions.map((badge) => {
+      const row = rowMap.get(badge.key);
+      return buildBadgeProgress(badge, row, row?.badge_id ?? null, row?.progress_value ?? 0);
+    });
+
+    // Include DB rows for badge keys not in BADGE_DEFINITIONS
+    const knownKeys = new Set(definitions.map((d) => d.key));
+    const unknownKeys = [...rowMap.keys()].filter((key) => !knownKeys.has(key as BadgeKey));
+    const dbMetaMap = await fetchBadgesMetaForKeys(unknownKeys);
+
+    const extraProgress = unknownKeys.map((key) => {
+      const row = rowMap.get(key as BadgeKey)!;
+      const dbMeta = dbMetaMap.get(key);
+      const meta = getBadgeMetadata(key, {
+        title: dbMeta?.title ?? row.title ?? undefined,
+        description: dbMeta?.description ?? row.description ?? undefined,
+        iconUrl: dbMeta?.icon_url ?? row.icon_url ?? undefined,
+        subject: dbMeta?.subject ?? undefined,
+        badgeType: dbMeta?.badge_type ?? undefined,
+        accentColor: dbMeta?.badge_color ?? undefined,
+        rarity: dbMeta?.rarity ?? undefined,
+      });
+      const syntheticDef: BadgeDefinition = {
+        key: key as BadgeKey,
+        subject: (dbMeta?.subject as BadgeSubject) ?? (row.subject as BadgeSubject) ?? "common",
+        title: meta.title,
+        name: meta.title,
+        description: meta.description,
+        category: meta.category,
+        iconUrl: meta.iconUrl,
+        conditionType: "mission_complete_count",
+        conditionValue: Math.max(1, row.progress_value ?? 1),
+        isActive: true,
+        badgeType: (dbMeta?.badge_type as BadgeType) ?? undefined,
+      };
+      return buildBadgeProgress(syntheticDef, row, row.badge_id ?? null, row.progress_value ?? 0);
+    });
+
+    const progress = [...knownProgress, ...extraProgress];
+
+    const earnedBadges = progress
+      .filter((badge) => badge.earned && badge.earnedAt)
+      .map(toEarnedBadgeSummary)
+      .sort((a, b) => b.earnedAt.localeCompare(a.earnedAt));
+
+    const nextBadge = progress
+      .filter((badge) => !badge.earned)
+      .sort((a, b) => b.progressPercent - a.progressPercent || a.remainingValue - b.remainingValue || a.title.localeCompare(b.title, "ko"))[0] ?? null;
+
+    const showcaseBadges = [...progress]
+      .sort((a, b) => {
+        if (a.earned !== b.earned) return Number(b.earned) - Number(a.earned);
+        if (a.progressPercent !== b.progressPercent) return b.progressPercent - a.progressPercent;
+        return a.title.localeCompare(b.title, "ko");
+      })
+      .slice(0, Math.max(6, progress.length));
+
+    return {
+      totalEarned: earnedBadges.length,
+      recentBadges: earnedBadges.slice(0, 3),
+      showcaseBadges,
+      nextBadge,
+    };
+  }
+
+  // Fallback: full computation (no DB rows yet)
+  const progress = await getBadgeProgress(resolvedStudentId, subject);
   const earnedBadges = progress
     .filter((badge) => badge.earned && badge.earnedAt)
     .map(toEarnedBadgeSummary)

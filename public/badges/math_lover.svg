@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <radialGradient id="bgml" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#EFF6FF"/>
+      <stop offset="100%" stop-color="#BFDBFE"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#bgml)" stroke="#1D4ED8" stroke-width="2"/>
+  <!-- 수학 기호들 -->
+  <text x="30" y="48" font-family="serif" font-size="24" font-weight="900" fill="#1D4ED8">∑</text>
+  <text x="58" y="42" font-family="serif" font-size="18" font-weight="900" fill="#2563EB">π</text>
+  <text x="78" y="48" font-family="serif" font-size="22" font-weight="900" fill="#1D4ED8">∞</text>
+  <text x="25" y="72" font-family="serif" font-size="20" font-weight="900" fill="#3B82F6">√</text>
+  <text x="48" y="75" font-family="serif" font-size="18" font-weight="900" fill="#1D4ED8">x²</text>
+  <text x="72" y="72" font-family="serif" font-size="20" font-weight="900" fill="#2563EB">∫</text>
+  <!-- 하트 수학 -->
+  <path d="M60 84 Q52 76 44 80 Q38 84 40 92 Q42 98 60 108 Q78 98 80 92 Q82 84 76 80 Q68 76 60 84Z" fill="#EF4444" opacity="0.85" transform="scale(0.6) translate(40,20)"/>
+  <!-- 반짝임 -->
+  <circle cx="22" cy="32" r="2.5" fill="#60A5FA" opacity="0.8"/>
+  <circle cx="95" cy="28" r="2" fill="#3B82F6" opacity="0.7"/>
+  <circle cx="92" cy="88" r="2.5" fill="#93C5FD" opacity="0.8"/>
+  <text x="60" y="100" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="700" fill="#1E3A8A" letter-spacing="0.5">수학 애호가</text>
+  <text x="60" y="111" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#1D4ED8" letter-spacing="0.3">RARE</text>
+</svg>

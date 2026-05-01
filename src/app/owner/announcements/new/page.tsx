@@ -13,9 +13,12 @@ import {
   getSchoolLevelLabel,
   SCHOOL_LEVEL_OPTIONS,
   type AnnouncementAudienceRole,
+  type AnnouncementCategory,
+  type AnnouncementPriority,
   type AnnouncementTargetScope,
   type SchoolLevel,
 } from "@/constants/announcementMeta";
+import { CATEGORY_META, CATEGORY_ORDER, PRIORITY_META, PRIORITY_ORDER, categoryColorClasses } from "@/constants/announcement";
 import { OWNER_ANNOUNCEMENT_NEW_TEXT } from "@/constants/ownerAnnouncementNew.ko";
 import { safeFileName } from "@/lib/files";
 import { toPrettyErrorString } from "@/lib/supabaseError";
@@ -92,6 +95,8 @@ export default function NewAnnouncementPage() {
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const [category, setCategory] = useState<AnnouncementCategory>("general");
+  const [priority, setPriority] = useState<AnnouncementPriority>("normal");
   const [audienceRole, setAudienceRole] = useState<AnnouncementAudienceRole>("all");
   const [targetScope, setTargetScope] = useState<AnnouncementTargetScope>("all");
   const [schoolLevel, setSchoolLevel] = useState<SchoolLevel | "">("");
@@ -99,6 +104,8 @@ export default function NewAnnouncementPage() {
   const [classLabel, setClassLabel] = useState("");
   const [studentId, setStudentId] = useState<string | null>(null);
   const [requiresAck, setRequiresAck] = useState(false);
+  const [deliveryMode, setDeliveryMode] = useState<"now" | "scheduled">("now");
+  const [scheduledAt, setScheduledAt] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
 
   const [error, setError] = useState<string | null>(null);
@@ -256,6 +263,10 @@ export default function NewAnnouncementPage() {
     if (targetScope === "grade" && (!schoolLevel || grade === "")) return OWNER_ANNOUNCEMENT_NEW_TEXT.validationTarget;
     if (targetScope === "class" && (!schoolLevel || grade === "" || !classLabel.trim())) return OWNER_ANNOUNCEMENT_NEW_TEXT.validationTarget;
     if (targetScope === "student" && !studentId) return OWNER_ANNOUNCEMENT_NEW_TEXT.validationTarget;
+    if (deliveryMode === "scheduled") {
+      if (!scheduledAt) return OWNER_ANNOUNCEMENT_NEW_TEXT.validationScheduledAt;
+      if (new Date(scheduledAt) <= new Date()) return OWNER_ANNOUNCEMENT_NEW_TEXT.validationScheduledAt;
+    }
     return null;
   };
 
@@ -334,15 +345,25 @@ export default function NewAnnouncementPage() {
       if (userError) throw userError;
       if (!user) throw new Error("Missing user");
 
+      const insertPayload: Record<string, unknown> = {
+        title: title.trim(),
+        body: body.trim(),
+        category,
+        priority,
+        audience_role: audienceRole,
+        requires_ack: requiresAck,
+        notification_channels: ["in_app"],
+        created_by: user.id,
+      };
+      if (deliveryMode === "scheduled") {
+        insertPayload.scheduled_at = new Date(scheduledAt).toISOString();
+      } else {
+        insertPayload.published_at = new Date().toISOString();
+      }
+
       const { data: inserted, error: insertError } = await supabase
         .from("announcements")
-        .insert({
-          title: title.trim(),
-          body: body.trim(),
-          audience_role: audienceRole,
-          requires_ack: requiresAck,
-          created_by: user.id,
-        })
+        .insert(insertPayload)
         .select("id")
         .single<{ id: string }>();
       if (insertError) throw insertError;
@@ -387,8 +408,13 @@ export default function NewAnnouncementPage() {
       setAudienceRole("all");
       resetTargetInputs("all");
       setRequiresAck(false);
+      setDeliveryMode("now");
+      setScheduledAt("");
       setAttachments([]);
-      setSuccess(OWNER_ANNOUNCEMENT_NEW_TEXT.successRegistered);
+      const successMsg = deliveryMode === "scheduled"
+        ? OWNER_ANNOUNCEMENT_NEW_TEXT.successScheduled
+        : OWNER_ANNOUNCEMENT_NEW_TEXT.successRegistered;
+      setSuccess(successMsg);
       window.setTimeout(() => router.replace("/owner/announcements"), 600);
     } catch (e: unknown) {
       console.error("Announcement create failed:", toPrettyErrorString(e), e);
@@ -439,6 +465,104 @@ export default function NewAnnouncementPage() {
           className="h-full"
         >
           <div className="space-y-5">
+            {/* 카테고리 선택 */}
+            <div>
+              <label className="text-sm font-bold text-[var(--text)]">카테고리 *</label>
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {CATEGORY_ORDER.map((key) => {
+                  const meta = CATEGORY_META[key];
+                  const isActive = category === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setCategory(key)}
+                      className={
+                        isActive
+                          ? "flex flex-col items-start gap-1 rounded-xl border-2 border-[var(--accent)] bg-[var(--accent-soft)] p-3 text-left transition"
+                          : "flex flex-col items-start gap-1 rounded-xl border-2 border-[var(--border)] bg-[var(--card)] p-3 text-left transition hover:border-[var(--accent)]/50"
+                      }
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">{meta.icon}</span>
+                        <span className="font-bold text-[var(--text)]">{meta.ko}</span>
+                      </div>
+                      <span className="text-xs text-[var(--text-muted)]">{meta.desc}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {category === "consultation" && (
+                <p className="mt-2 text-xs text-amber-400">
+                  ℹ️ 상담 카테고리는 보통 상담 일정 변경 시 자동으로 생성됩니다.
+                </p>
+              )}
+            </div>
+
+            {/* 우선순위 선택 */}
+            <div>
+              <label className="text-sm font-bold text-[var(--text)]">우선순위</label>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {PRIORITY_ORDER.map((key) => {
+                  const meta = PRIORITY_META[key];
+                  const isActive = priority === key;
+                  let activeCls = "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)] font-bold";
+                  if (isActive && key === "urgent") activeCls = "border-red-500 bg-red-500/15 text-red-300 font-bold";
+                  else if (isActive && key === "high") activeCls = "border-orange-500 bg-orange-500/15 text-orange-300 font-bold";
+                  else if (isActive && key === "low") activeCls = "border-gray-500 bg-gray-500/10 text-gray-300 font-bold";
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setPriority(key)}
+                      className={
+                        isActive
+                          ? `flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition ${activeCls}`
+                          : "flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--card)] px-4 py-2 text-sm text-[var(--text-muted)] transition hover:border-[var(--accent)]/50"
+                      }
+                    >
+                      {meta.icon && <span>{meta.icon}</span>}
+                      <span>{meta.ko}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">{PRIORITY_META[priority].desc}</p>
+            </div>
+
+            {/* 실시간 미리보기 */}
+            <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--card)] p-4">
+              <p className="mb-2 text-xs uppercase tracking-wider text-[var(--text-muted)]">
+                👁️ 학부모/학생 화면 미리보기
+              </p>
+              <div
+                className={
+                  priority === "urgent"
+                    ? "rounded-xl border-2 border-red-500 bg-red-500/10 p-4"
+                    : priority === "high"
+                      ? "rounded-xl border-2 border-orange-500/50 p-4"
+                      : category === "consultation"
+                        ? "rounded-xl border border-blue-500/40 bg-blue-500/5 p-4"
+                        : "rounded-xl border border-[var(--border)] bg-[var(--card-soft)] p-4"
+                }
+              >
+                <div className="mb-2 flex items-center gap-2 text-xs">
+                  <span className="text-lg">{CATEGORY_META[category].icon}</span>
+                  <span className={`rounded-full border px-2 py-0.5 ${categoryColorClasses(CATEGORY_META[category].color)}`}>
+                    {CATEGORY_META[category].ko}
+                  </span>
+                  {priority === "urgent" && <span className="text-red-400">🚨 긴급</span>}
+                  {priority === "high" && <span className="text-orange-400">⚡ 중요</span>}
+                </div>
+                <h4 className="font-bold text-[var(--text)]">
+                  {title.trim() || "(제목을 입력하세요)"}
+                </h4>
+                <p className="mt-1 line-clamp-2 whitespace-pre-line text-sm text-[var(--text-muted)]">
+                  {body.trim() || "(내용을 입력하세요)"}
+                </p>
+              </div>
+            </div>
+
             <label className="block text-sm text-[var(--text-muted)]">
               <span>{OWNER_ANNOUNCEMENT_NEW_TEXT.titleLabel}</span>
               <input
@@ -472,6 +596,49 @@ export default function NewAnnouncementPage() {
                   <span className="mt-1 block text-xs text-[var(--text-muted)]">{OWNER_ANNOUNCEMENT_NEW_TEXT.requiresAckHelp}</span>
                 </span>
               </label>
+            </div>
+
+            {/* 발송 시점 */}
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] p-4">
+              <div className="mb-3 text-sm font-medium text-[var(--text)]">
+                {OWNER_ANNOUNCEMENT_NEW_TEXT.deliveryModeLabel}
+              </div>
+              <div className="flex gap-2">
+                {(["now", "scheduled"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setDeliveryMode(mode)}
+                    className={`flex-1 rounded-xl border px-4 py-2.5 text-sm font-medium transition ${
+                      deliveryMode === mode
+                        ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--bg)]"
+                        : "border-[var(--border)] bg-[var(--card)] text-[var(--text-muted)] hover:text-[var(--text)]"
+                    }`}
+                  >
+                    {mode === "now"
+                      ? OWNER_ANNOUNCEMENT_NEW_TEXT.deliveryModeNow
+                      : OWNER_ANNOUNCEMENT_NEW_TEXT.deliveryModeScheduled}
+                  </button>
+                ))}
+              </div>
+
+              {deliveryMode === "scheduled" && (
+                <div className="mt-3">
+                  <label className="block text-sm text-[var(--text-muted)]">
+                    <span>{OWNER_ANNOUNCEMENT_NEW_TEXT.scheduledAtLabel}</span>
+                    <input
+                      type="datetime-local"
+                      className={inputClassName()}
+                      value={scheduledAt}
+                      min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
+                      onChange={(e) => setScheduledAt(e.target.value)}
+                    />
+                  </label>
+                  <p className="mt-1.5 text-xs text-[var(--text-muted)]">
+                    {OWNER_ANNOUNCEMENT_NEW_TEXT.scheduledAtHelp}
+                  </p>
+                </div>
+              )}
             </div>
 
             <div>
@@ -680,7 +847,7 @@ export default function NewAnnouncementPage() {
         header={OWNER_ANNOUNCEMENT_NEW_TEXT.summaryCardTitle}
         description={OWNER_ANNOUNCEMENT_NEW_TEXT.summaryCardDescription}
       >
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] p-4">
             <div className="text-xs text-[var(--text-muted)]">{OWNER_ANNOUNCEMENT_NEW_TEXT.summaryAudienceLabel}</div>
             <div className="mt-2 text-base font-semibold text-[var(--text)]">{getAudienceSummaryLabel(audienceRole)}</div>
@@ -697,6 +864,16 @@ export default function NewAnnouncementPage() {
                 : `${estimatedRecipientCount}${OWNER_ANNOUNCEMENT_NEW_TEXT.summaryStudentCountSuffix}`}
             </div>
           </div>
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] p-4">
+            <div className="text-xs text-[var(--text-muted)]">{OWNER_ANNOUNCEMENT_NEW_TEXT.deliveryModeLabel}</div>
+            <div className="mt-2 text-base font-semibold text-[var(--text)]">
+              {deliveryMode === "now"
+                ? OWNER_ANNOUNCEMENT_NEW_TEXT.deliveryModeNow
+                : scheduledAt
+                  ? new Date(scheduledAt).toLocaleString("ko-KR")
+                  : OWNER_ANNOUNCEMENT_NEW_TEXT.deliveryModeScheduled}
+            </div>
+          </div>
         </div>
 
         <div className="mt-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -708,7 +885,11 @@ export default function NewAnnouncementPage() {
             onClick={() => void submit()}
             disabled={submitting || attachmentUploading}
           >
-            {submitting || attachmentUploading ? OWNER_ANNOUNCEMENT_NEW_TEXT.submitting : OWNER_ANNOUNCEMENT_NEW_TEXT.submit}
+            {submitting || attachmentUploading
+              ? OWNER_ANNOUNCEMENT_NEW_TEXT.submitting
+              : deliveryMode === "scheduled"
+                ? OWNER_ANNOUNCEMENT_NEW_TEXT.submitScheduled
+                : OWNER_ANNOUNCEMENT_NEW_TEXT.submit}
           </button>
         </div>
       </SectionCard>

@@ -20,11 +20,9 @@ type PendingStudentRow = {
   account_status: "pending" | "active" | "blocked" | "withdrawn" | null;
 };
 
+const LEVEL_MAP: Record<string, string> = { elementary: "초등", middle: "중등", high: "고등", elem: "초등", mid: "중등" };
 function levelToLabel(level: string | null): string {
-  if (level === "elem") return "초등";
-  if (level === "mid") return "중등";
-  if (level === "high") return "고등";
-  return "-";
+  return LEVEL_MAP[level ?? ""] ?? "-";
 }
 
 function formatCreatedAt(value: string): string {

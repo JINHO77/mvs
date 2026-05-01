@@ -198,7 +198,17 @@ function getWeaknessWeight(row: StudentMasteryRow): number {
 }
 
 async function fetchRecommendationSeedData(studentId: string): Promise<RecommendationSeedData> {
-  const [profileRes, units, missions, allAttemptsRes, recentAttemptsRes, masteryRes, progressRes] = await Promise.all([
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseKey) {
+    console.error("[fetchRecommendationSeedData] Supabase 환경변수 누락!", {
+      hasUrl: !!supabaseUrl,
+      hasKey: !!supabaseKey,
+    });
+    return { profile: null, units: [], missions: [], allAttempts: [], recentAttempts: [], recentStepAttempts: [], masteryRows: [] };
+  }
+
+  const [profileRes, unitsRes, missionsRes, allAttemptsRes, recentAttemptsRes, masteryRes, progressRes] = await Promise.allSettled([
     supabase.from("profiles").select("school_level,grade,interest_tags").eq("id", studentId).maybeSingle<RecommendationProfile>(),
     fetchCurriculumUnits(),
     fetchPublishedMissions(200),
@@ -232,13 +242,25 @@ async function fetchRecommendationSeedData(studentId: string): Promise<Recommend
       .returns<StudentProgressRow[]>(),
   ]);
 
-  if (profileRes.error) throw profileRes.error;
-  if (allAttemptsRes.error) throw allAttemptsRes.error;
-  if (recentAttemptsRes.error) throw recentAttemptsRes.error;
-  if (masteryRes.error) throw masteryRes.error;
-  if (progressRes.error && !isProgressSchemaFallbackError(progressRes.error)) throw progressRes.error;
+  const profileData = profileRes.status === "fulfilled" && !profileRes.value.error ? profileRes.value.data : null;
+  if (profileRes.status === "fulfilled" && profileRes.value.error) throw profileRes.value.error;
 
-  const recentAttempts = recentAttemptsRes.data ?? [];
+  const units = unitsRes.status === "fulfilled" ? unitsRes.value : [];
+  const missions = missionsRes.status === "fulfilled" ? missionsRes.value : [];
+
+  const allAttemptsData = allAttemptsRes.status === "fulfilled" && !allAttemptsRes.value.error ? allAttemptsRes.value.data ?? [] : [];
+  if (allAttemptsRes.status === "fulfilled" && allAttemptsRes.value.error) throw allAttemptsRes.value.error;
+
+  const recentAttempts = recentAttemptsRes.status === "fulfilled" && !recentAttemptsRes.value.error ? recentAttemptsRes.value.data ?? [] : [];
+  if (recentAttemptsRes.status === "fulfilled" && recentAttemptsRes.value.error) throw recentAttemptsRes.value.error;
+
+  const masteryData = masteryRes.status === "fulfilled" && !masteryRes.value.error ? masteryRes.value.data ?? [] : [];
+  if (masteryRes.status === "fulfilled" && masteryRes.value.error) throw masteryRes.value.error;
+
+  const progressData = progressRes.status === "fulfilled" && !progressRes.value.error ? progressRes.value.data ?? [] :
+    progressRes.status === "fulfilled" && isProgressSchemaFallbackError(progressRes.value.error) ? [] : null;
+  if (progressData === null && progressRes.status === "fulfilled") throw progressRes.value.error;
+
   const attemptIds = recentAttempts.map((attempt) => attempt.id);
   let recentStepAttempts: RecommendationStepAttemptRow[] = [];
 
@@ -253,13 +275,13 @@ async function fetchRecommendationSeedData(studentId: string): Promise<Recommend
   }
 
   return {
-    profile: profileRes.data ?? null,
+    profile: profileData ?? null,
     units,
     missions,
-    allAttempts: allAttemptsRes.data ?? [],
+    allAttempts: allAttemptsData,
     recentAttempts,
     recentStepAttempts,
-    masteryRows: (progressRes.data?.length ? progressRes.data : masteryRes.data) ?? [],
+    masteryRows: (progressData?.length ? progressData : masteryData) ?? [],
   };
 }
 

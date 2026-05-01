@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\(JSON.stringify\\({...p.dependencies,...p.devDependencies}, null, 2\\)\\)\")",
+      "Bash(node -e \"const p = require\\('./package.json'\\); const all = {...p.dependencies,...p.devDependencies}; console.log\\(Object.keys\\(all\\).join\\('\\\\n'\\)\\)\")",
+      "Bash(npx tsx:*)",
+      "Bash(ls c:/dev/mvs/.env*)",
+      "Bash(node -e ':*)"
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <radialGradient id="bgel" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#F0FDFB"/>
+      <stop offset="100%" stop-color="#99F6E4"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#bgel)" stroke="#0D9488" stroke-width="2"/>
+  <!-- 지구본 -->
+  <circle cx="60" cy="55" r="26" fill="#0F766E" stroke="#0D9488" stroke-width="1.5"/>
+  <!-- 경선 -->
+  <ellipse cx="60" cy="55" rx="10" ry="26" fill="none" stroke="#2DD4BF" stroke-width="1" opacity="0.7"/>
+  <ellipse cx="60" cy="55" rx="18" ry="26" fill="none" stroke="#2DD4BF" stroke-width="1" opacity="0.5"/>
+  <!-- 위선 -->
+  <line x1="34" y1="55" x2="86" y2="55" stroke="#2DD4BF" stroke-width="1" opacity="0.7"/>
+  <line x1="36" y1="43" x2="84" y2="43" stroke="#2DD4BF" stroke-width="1" opacity="0.5"/>
+  <line x1="36" y1="67" x-x="84" y2="67" stroke="#2DD4BF" stroke-width="1" opacity="0.5"/>
+  <line x1="37" y1="67" x2="83" y2="67" stroke="#2DD4BF" stroke-width="1" opacity="0.5"/>
+  <!-- A, B, C -->
+  <text x="48" y="50" font-family="sans-serif" font-size="10" font-weight="900" fill="#CCFBF1">A</text>
+  <text x="58" y="62" font-family="sans-serif" font-size="10" font-weight="900" fill="#CCFBF1">B</text>
+  <text x="67" y="52" font-family="sans-serif" font-size="10" font-weight="900" fill="#CCFBF1">C</text>
+  <!-- 별 -->
+  <polygon points="60,18 62,24 68,24 63,28 65,34 60,30 55,34 57,28 52,24 58,24" fill="#FFD700" stroke="#F59E0B" stroke-width="0.5"/>
+  <circle cx="22" cy="38" r="2.5" fill="#2DD4BF" opacity="0.8"/>
+  <circle cx="95" cy="35" r="2" fill="#0D9488" opacity="0.8"/>
+  <text x="60" y="98" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="700" fill="#134E4A" letter-spacing="0.5">영어 애호가</text>
+  <text x="60" y="109" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#0D9488" letter-spacing="0.3">RARE</text>
+</svg>

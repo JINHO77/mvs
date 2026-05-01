@@ -10,6 +10,7 @@
     "check:korean-literals": "powershell -ExecutionPolicy Bypass -File scripts/check-korean-literals.ps1"
   },
   "dependencies": {
+    "@supabase/auth-helpers-nextjs": "^0.15.0",
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.96.0",
     "next": "16.1.6",
@@ -19,6 +20,7 @@
     "recharts": "^3.8.0"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.87.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

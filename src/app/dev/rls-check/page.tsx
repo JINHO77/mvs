@@ -84,7 +84,7 @@ export default function DevRlsCheckPage() {
           status: "requested",
           entry_mode: "manual",
           manual_student_name: "RLS TEST",
-          manual_school_level: "elem",
+          manual_school_level: "elementary",
           manual_grade: 1,
           manual_guardian_contact: "000-0000-0000",
           manual_consultation_content: action === "insert_test_fk" ? "RLS FK check" : "RLS ownership check",

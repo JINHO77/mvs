@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MvsHeaderLogo from "@/components/brand/MvsHeaderLogo";
 import HomeLink from "@/components/common/HomeLink";
@@ -36,7 +36,7 @@ function formatExpiryDate(value: string | null): string {
   return `${year}.${month}.${day}까지 사용 가능`;
 }
 
-export default function LinkStudentPage() {
+function LinkStudentPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isDevMode = useMemo(() => process.env.NEXT_PUBLIC_DEV_MODE === "true", []);
@@ -358,5 +358,13 @@ export default function LinkStudentPage() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function LinkStudentPage() {
+  return (
+    <Suspense>
+      <LinkStudentPageInner />
+    </Suspense>
   );
 }

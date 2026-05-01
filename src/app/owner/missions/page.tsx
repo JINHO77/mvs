@@ -166,12 +166,14 @@ export default function OwnerMissionsPage() {
               className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-xs text-[var(--text)]"
             >
               <option value="all">전체</option>
+              <option value="3">초3</option>
               <option value="4">초4</option>
               <option value="5">초5</option>
               <option value="6">초6</option>
               <option value="7">중1</option>
               <option value="8">중2</option>
               <option value="9">중3</option>
+              <option value="10">고1</option>
             </select>
           </label>
 

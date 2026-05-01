@@ -4,10 +4,10 @@ import { normalizeMissionChoiceOrder } from "./missionChoiceOrder";
 export type GeneratedMissionStepPayload = {
   stepOrder: number;
   title: string;
-  stepType: "input" | "concept" | "choice";
+  stepType: "input" | "concept" | "choice" | "writing";
   question?: string;
   inputPlaceholder?: string;
-  answerType?: "number" | "text" | "equation";
+  answerType?: "number" | "text" | "equation" | "writing";
   correctAnswer?: string;
   acceptedAnswers?: string[];
   acceptedUnits?: string[];
@@ -23,6 +23,11 @@ export type GeneratedMissionStepPayload = {
   conceptTitle?: string;
   conceptDescription?: string;
   explanation?: string;
+  expectedSentenceCount?: number;
+  writingGuide?: string[];
+  sampleAnswer?: string;
+  keyExpressions?: string[];
+  commonMistakes?: string[];
 };
 
 export type GeneratedMissionPayload = {
@@ -31,7 +36,7 @@ export type GeneratedMissionPayload = {
   scenario: string;
   essentialQuestion: string;
   conceptSummary: string;
-  difficulty: "easy" | "normal" | "challenge";
+  difficulty: "easy" | "normal" | "hard" | "challenge";
   estimatedMinutes: number;
   steps: GeneratedMissionStepPayload[];
 };
@@ -58,10 +63,10 @@ export const AI_MISSION_JSON_SCHEMA = {
         properties: {
           stepOrder: { type: "integer", minimum: 1 },
           title: { type: "string", minLength: 2 },
-          stepType: { type: "string", enum: ["input", "concept", "choice"] },
+          stepType: { type: "string", enum: ["input", "concept", "choice", "writing"] },
           question: { type: "string" },
           inputPlaceholder: { type: "string" },
-          answerType: { type: "string", enum: ["number", "text", "equation"] },
+          answerType: { type: "string", enum: ["number", "text", "equation", "writing"] },
           correctAnswer: { type: "string" },
           acceptedAnswers: { type: "array", items: { type: "string", minLength: 1 } },
           acceptedUnits: { type: "array", items: { type: "string", minLength: 1 } },
@@ -97,6 +102,11 @@ export const AI_MISSION_JSON_SCHEMA = {
           conceptTitle: { type: "string" },
           conceptDescription: { type: "string" },
           explanation: { type: "string" },
+          expectedSentenceCount: { type: "integer", minimum: 1, maximum: 20 },
+          writingGuide: { type: "array", items: { type: "string", minLength: 1 } },
+          sampleAnswer: { type: "string" },
+          keyExpressions: { type: "array", items: { type: "string", minLength: 1 } },
+          commonMistakes: { type: "array", items: { type: "string", minLength: 1 } },
         },
       },
     },
@@ -154,7 +164,7 @@ export function parseGeneratedMissionPayload(value: unknown): GeneratedMissionPa
   const steps = value.steps;
 
   if (!missionKey || !title || !scenario || !essentialQuestion || !conceptSummary) return null;
-  if (difficulty !== "easy" && difficulty !== "normal" && difficulty !== "challenge") return null;
+  if (difficulty !== "easy" && difficulty !== "normal" && difficulty !== "hard" && difficulty !== "challenge") return null;
   if (typeof estimatedMinutes !== "number" || !Number.isFinite(estimatedMinutes)) return null;
   if (!Array.isArray(steps) || steps.length === 0) return null;
 
@@ -165,7 +175,7 @@ export function parseGeneratedMissionPayload(value: unknown): GeneratedMissionPa
     const stepTitle = asString(step.title);
     const stepType = step.stepType;
     if (typeof stepOrder !== "number" || !Number.isFinite(stepOrder) || !stepTitle) return null;
-    if (stepType !== "input" && stepType !== "concept" && stepType !== "choice") return null;
+    if (stepType !== "input" && stepType !== "concept" && stepType !== "choice" && stepType !== "writing") return null;
 
     parsedSteps.push({
       stepOrder,
@@ -173,7 +183,7 @@ export function parseGeneratedMissionPayload(value: unknown): GeneratedMissionPa
       stepType,
       question: asString(step.question) ?? undefined,
       inputPlaceholder: asString(step.inputPlaceholder) ?? undefined,
-      answerType: (["number", "text", "equation"] as const).includes(step.answerType as never)
+      answerType: (["number", "text", "equation", "writing"] as const).includes(step.answerType as never)
         ? (step.answerType as GeneratedMissionStepPayload["answerType"])
         : undefined,
       correctAnswer: asString(step.correctAnswer) ?? undefined,
@@ -191,6 +201,14 @@ export function parseGeneratedMissionPayload(value: unknown): GeneratedMissionPa
       conceptTitle: asString(step.conceptTitle) ?? undefined,
       conceptDescription: asString(step.conceptDescription) ?? undefined,
       explanation: asString(step.explanation) ?? undefined,
+      expectedSentenceCount:
+        typeof step.expectedSentenceCount === "number" && Number.isFinite(step.expectedSentenceCount)
+          ? Math.max(1, Math.round(step.expectedSentenceCount))
+          : undefined,
+      writingGuide: asStringArray(step.writingGuide),
+      sampleAnswer: asString(step.sampleAnswer) ?? undefined,
+      keyExpressions: asStringArray(step.keyExpressions),
+      commonMistakes: asStringArray(step.commonMistakes),
     });
   }
 
@@ -203,5 +221,5 @@ export function parseGeneratedMissionPayload(value: unknown): GeneratedMissionPa
     difficulty,
     estimatedMinutes: Math.round(estimatedMinutes),
     steps: parsedSteps.sort((a, b) => a.stepOrder - b.stepOrder),
-  });
+  }) as unknown as GeneratedMissionPayload;
 }

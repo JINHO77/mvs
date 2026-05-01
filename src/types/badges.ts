@@ -1,4 +1,4 @@
-﻿export type BadgeCategory =
+export type BadgeCategory =
   | "starter"
   | "streak"
   | "exploration"
@@ -7,39 +7,74 @@
   | "speaking"
   | "graph"
   | "geometry"
-  | "logic";
+  | "logic"
+  | "missions"
+  | "xp"
+  | "level"
+  | "weekend"
+  | "bilingual";
 
-export type BadgeRarity = "common" | "uncommon" | "rare" | "epic";
+export type BadgeRarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
 
 export type BadgeSubject = "common" | "math" | "english";
 
 export type BadgeConditionType =
   | "mission_complete_count"
-  | "correct_step_streak"
-  | "distinct_unit_complete_count"
+  | "math_complete_count"
+  | "english_complete_count"
+  | "weekend_complete_count"
   | "difficulty_complete_count"
-  | "keyword_mission_complete_count"
-  | "study_day_streak";
+  | "distinct_unit_complete_count"
+  | "daily_streak"
+  | "total_xp_threshold"
+  | "level_reach"
+  | "bilingual_complete_count"
+  | "correct_step_streak";
 
 export type BadgeKey =
-  | "first_mission_complete"
-  | "three_correct_streak"
-  | "five_correct_streak"
-  | "explorer_three_units"
-  | "hard_challenger"
-  | "math_first_step"
-  | "graph_explorer"
-  | "geometry_starter"
-  | "logic_builder"
-  | "english_first_step"
-  | "reader_starter"
-  | "speaker_starter"
-  | "streak_reader";
+  // ── COMMON (10) ──────────────────────────────
+  | "start_journey"
+  | "first_math"
+  | "first_english"
+  | "first_weekend"
+  | "char_white_rabbit"
+  | "streak_3"
+  | "missions_5"
+  | "missions_10"
+  | "xp_100"
+  | "xp_500"
+  // ── UNCOMMON (8) ─────────────────────────────
+  | "hard_3"
+  | "level_5"
+  | "streak_7"
+  | "char_english_owl"
+  | "char_math_fox"
+  | "char_panda"
+  | "missions_30"
+  | "xp_1000"
+  // ── RARE (8) ─────────────────────────────────
+  | "weekend_10"
+  | "char_explorer_bear"
+  | "level_10"
+  | "char_fire_cat"
+  | "streak_30"
+  | "bilingual_30"
+  | "missions_100"
+  | "xp_3000"
+  // ── EPIC (6) ─────────────────────────────────
+  | "level_15"
+  | "hard_30"
+  | "char_lion_king"
+  | "streak_60"
+  | "missions_300"
+  | "xp_10000"
+  // ── LEGENDARY (4) ────────────────────────────
+  | "streak_365"
+  | "missions_1000"
+  | "xp_100000"
+  | "char_legendary_dragon";
 
-export type EnglishBadgeKey = Extract<
-  BadgeKey,
-  "english_first_step" | "reader_starter" | "speaker_starter" | "streak_reader"
->;
+export type BadgeType = "achievement" | "character";
 
 export type BadgeDefinition = {
   key: BadgeKey;
@@ -52,9 +87,8 @@ export type BadgeDefinition = {
   conditionType: BadgeConditionType;
   conditionValue: number;
   isActive: boolean;
+  badgeType?: BadgeType;
 };
-
-export type EnglishBadgeDefinition = BadgeDefinition;
 
 export type BadgeProgressState = "earned" | "in_progress" | "locked";
 

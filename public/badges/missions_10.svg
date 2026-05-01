@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <radialGradient id="bg10" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#F0FFF5"/>
+      <stop offset="100%" stop-color="#B8F0D0"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#bg10)" stroke="#2ECC71" stroke-width="2"/>
+  <!-- 방패 -->
+  <path d="M60 22 L82 32 L82 60 Q82 78 60 88 Q38 78 38 60 L38 32 Z" fill="#27AE60" opacity="0.9"/>
+  <path d="M60 28 L78 36 L78 60 Q78 75 60 83 Q42 75 42 60 L42 36 Z" fill="#2ECC71"/>
+  <path d="M60 35 L72 41 L72 60 Q72 70 60 77 Q48 70 48 60 L48 41 Z" fill="#52D98A"/>
+  <!-- 체크 마크 -->
+  <polyline points="50,60 57,68 72,50" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 빛나는 효과 -->
+  <circle cx="28" cy="30" r="3" fill="#2ECC71" opacity="0.6"/>
+  <circle cx="92" cy="40" r="2" fill="#27AE60" opacity="0.7"/>
+  <circle cx="88" cy="85" r="2.5" fill="#2ECC71" opacity="0.5"/>
+  <text x="60" y="100" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="700" fill="#1A6B40" letter-spacing="0.5">열정 학생</text>
+  <text x="60" y="111" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#27AE60" letter-spacing="0.3">COMMON</text>
+</svg>

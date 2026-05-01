@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <radialGradient id="bgem" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#F0FDF4"/>
+      <stop offset="100%" stop-color="#BBF7D0"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#bgem)" stroke="#16A34A" stroke-width="2"/>
+  <!-- 웃는 얼굴 -->
+  <circle cx="60" cy="55" r="28" fill="#22C55E" stroke="#16A34A" stroke-width="1.5"/>
+  <circle cx="60" cy="55" r="24" fill="#4ADE80"/>
+  <!-- 눈 -->
+  <ellipse cx="50" cy="50" rx="4" ry="5" fill="#15803D"/>
+  <ellipse cx="70" cy="50" rx="4" ry="5" fill="#15803D"/>
+  <!-- 웃는 입 -->
+  <path d="M46 62 Q60 74 74 62" fill="none" stroke="#15803D" stroke-width="3" stroke-linecap="round"/>
+  <!-- 볼 -->
+  <ellipse cx="42" cy="60" rx="7" ry="5" fill="#86EFAC" opacity="0.7"/>
+  <ellipse cx="78" cy="60" rx="7" ry="5" fill="#86EFAC" opacity="0.7"/>
+  <!-- 별들 -->
+  <polygon points="60,18 62,24 68,24 63,28 65,34 60,30 55,34 57,28 52,24 58,24" fill="#FFD700" stroke="#F59E0B" stroke-width="0.5"/>
+  <circle cx="22" cy="40" r="3" fill="#4ADE80" opacity="0.8"/>
+  <circle cx="95" cy="35" r="2.5" fill="#22C55E" opacity="0.7"/>
+  <circle cx="90" cy="80" r="2" fill="#BBF7D0" opacity="0.9"/>
+  <text x="60" y="96" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="700" fill="#14532D" letter-spacing="0.5">쉬운 건 식은죽</text>
+  <text x="60" y="107" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#16A34A" letter-spacing="0.3">COMMON</text>
+</svg>

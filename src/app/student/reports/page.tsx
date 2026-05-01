@@ -385,7 +385,7 @@ export default function StudentReportsPage() {
       .map(([key, label]) => ({
         key,
         label: displayText(label),
-        value: clampScore((currentReport.english_metrics as Record<string, number>)?.[key] ?? 0),
+        value: clampScore((currentReport.english_metrics as unknown as Record<string, number>)?.[key] ?? 0),
       }));
   }, [currentReport]);
 

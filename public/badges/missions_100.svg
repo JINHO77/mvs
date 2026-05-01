@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <radialGradient id="bg100" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFF9F0"/>
+      <stop offset="100%" stop-color="#FFE0B2"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#bg100)" stroke="#FF6D00" stroke-width="2.5"/>
+  <!-- 트로피 -->
+  <rect x="52" y="78" width="16" height="6" rx="2" fill="#F57C00"/>
+  <rect x="46" y="82" width="28" height="5" rx="2.5" fill="#E65100"/>
+  <path d="M38 40 Q38 72 60 72 Q82 72 82 40 Z" fill="#FF8F00" stroke="#F57C00" stroke-width="1.5"/>
+  <path d="M41 43 Q41 68 60 68 Q79 68 79 43 Z" fill="#FFA726"/>
+  <path d="M41 50 Q35 50 33 58 Q31 66 40 68 L40 60 Q38 60 38 56 Q38 52 42 52 Z" fill="#FF8F00" stroke="#F57C00" stroke-width="1"/>
+  <path d="M79 50 Q85 50 87 58 Q89 66 80 68 L80 60 Q82 60 82 56 Q82 52 78 52 Z" fill="#FF8F00" stroke="#F57C00" stroke-width="1"/>
+  <!-- 100 텍스트 -->
+  <text x="60" y="64" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="900" fill="#FFFFFF">100</text>
+  <!-- 별들 -->
+  <polygon points="60,14 63,23 72,23 65,29 68,38 60,32 52,38 55,29 48,23 57,23" fill="#FFD700" stroke="#FFA500" stroke-width="0.5"/>
+  <circle cx="22" cy="32" r="4" fill="#FFD700" opacity="0.7"/>
+  <circle cx="98" cy="28" r="3" fill="#FF8F00" opacity="0.8"/>
+  <circle cx="95" cy="85" r="2.5" fill="#FFB74D" opacity="0.7"/>
+  <text x="60" y="100" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="700" fill="#7C2D12" letter-spacing="0.5">100개 돌파!</text>
+  <text x="60" y="111" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#EA580C" letter-spacing="0.3">EPIC</text>
+</svg>

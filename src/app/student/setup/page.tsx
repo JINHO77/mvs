@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import PageShell from "@/components/ui/PageShell";
 import SectionCard from "@/components/ui/SectionCard";
+import GuardianInvitationCard from "@/components/student/GuardianInvitationCard";
 import { supabase } from "@/lib/supabaseClient";
 
-type SchoolLevel = "elem" | "mid" | "high";
+type SchoolLevel = "elementary" | "middle" | "high";
 type PageState = "loading" | "ready";
 
 type ProfileRow = {
@@ -30,6 +31,7 @@ export default function StudentSetupPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [studentId, setStudentId] = useState<string | null>(null);
 
   const [name, setName] = useState("");
   const [schoolLevel, setSchoolLevel] = useState<SchoolLevel | "">("");
@@ -77,6 +79,7 @@ export default function StudentSetupPage() {
       return;
     }
 
+    setStudentId(me.id);
     setName(me.name ?? "");
     setSchoolLevel(me.school_level ?? "");
     setGrade(typeof me.grade === "number" ? me.grade : "");
@@ -84,7 +87,7 @@ export default function StudentSetupPage() {
     setPageState("ready");
   };
 
-  const gradeOptions = schoolLevel === "elem" ? [1, 2, 3, 4, 5, 6] : schoolLevel ? [1, 2, 3] : [];
+  const gradeOptions = schoolLevel === "elementary" ? [1, 2, 3, 4, 5, 6] : schoolLevel ? [1, 2, 3] : [];
 
   const handleSchoolLevelChange = (value: SchoolLevel | "") => {
     setSchoolLevel(value);
@@ -93,7 +96,7 @@ export default function StudentSetupPage() {
       return;
     }
 
-    const nextOptions = value === "elem" ? [1, 2, 3, 4, 5, 6] : [1, 2, 3];
+    const nextOptions = value === "elementary" ? [1, 2, 3, 4, 5, 6] : [1, 2, 3];
     if (!nextOptions.includes(Number(grade))) setGrade("");
   };
 
@@ -209,8 +212,8 @@ export default function StudentSetupPage() {
                   required
                 >
                   <option value="">선택</option>
-                  <option value="elem">초등</option>
-                  <option value="mid">중등</option>
+                  <option value="elementary">초등</option>
+                  <option value="middle">중등</option>
                   <option value="high">고등</option>
                 </select>
               </label>
@@ -254,6 +257,15 @@ export default function StudentSetupPage() {
           </form>
         )}
       </SectionCard>
+
+      {studentId && (
+        <SectionCard
+          header="👨‍👩‍👧 보호자 연결"
+          description="6자리 초대 코드를 발급받아 부모님께 알려드리면 자동으로 연결돼요. 코드는 7일간 유효해요."
+        >
+          <GuardianInvitationCard studentId={studentId} />
+        </SectionCard>
+      )}
     </PageShell>
   );
 }

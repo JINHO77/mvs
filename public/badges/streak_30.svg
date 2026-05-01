@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <radialGradient id="bgs30" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFF9F0"/>
+      <stop offset="100%" stop-color="#FFE0B2"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#bgs30)" stroke="#F57C00" stroke-width="2.5"/>
+  <!-- 달력 30 -->
+  <rect x="22" y="30" width="76" height="58" rx="8" fill="#FF8F00" stroke="#E65100" stroke-width="1.5"/>
+  <rect x="22" y="30" width="76" height="18" rx="8" fill="#E65100"/>
+  <rect x="22" y="42" width="76" height="6" rx="0" fill="#E65100"/>
+  <!-- 날짜 점들 -->
+  <circle cx="35" cy="58" r="3" fill="#FFE0B2" opacity="0.8"/>
+  <circle cx="47" cy="58" r="3" fill="#FFE0B2" opacity="0.8"/>
+  <circle cx="59" cy="58" r="3" fill="#FFE0B2" opacity="0.8"/>
+  <circle cx="71" cy="58" r="3" fill="#FFE0B2" opacity="0.8"/>
+  <circle cx="83" cy="58" r="3" fill="#FFE0B2" opacity="0.8"/>
+  <circle cx="35" cy="70" r="3" fill="#FFE0B2" opacity="0.8"/>
+  <circle cx="47" cy="70" r="3" fill="#FFE0B2" opacity="0.8"/>
+  <circle cx="59" cy="70" r="3" fill="#FFE0B2" opacity="0.8"/>
+  <circle cx="71" cy="70" r="3" fill="#FFE0B2" opacity="0.8"/>
+  <circle cx="83" cy="70" r="4" fill="#FFD700" stroke="#FFA500" stroke-width="1"/>
+  <!-- 30 텍스트 -->
+  <text x="60" y="40" text-anchor="middle" font-family="sans-serif" font-size="11" font-weight="900" fill="#FFFFFF" letter-spacing="1">30 DAYS</text>
+  <!-- 왕관 -->
+  <polygon points="55,18 60,10 65,18 70,12 72,20 48,20 50,12" fill="#FFD700" stroke="#F59E0B" stroke-width="0.5"/>
+  <text x="60" y="100" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="700" fill="#7C2D12" letter-spacing="0.5">한 달의 기적</text>
+  <text x="60" y="111" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#F57C00" letter-spacing="0.3">RARE</text>
+</svg>

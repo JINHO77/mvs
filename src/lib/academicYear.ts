@@ -62,47 +62,44 @@ export function toCurriculumGradeNumber(
 ): number | null {
   const normalizedLevel = toNormalizedSchoolLevel(schoolLevel);
   if (!normalizedLevel || !isFiniteGrade(grade)) return null;
-  if (normalizedLevel === "elementary") return grade;
-  if (normalizedLevel === "middle") return grade + 6;
-  return grade + 9;
+  return grade;
 }
 
-export function formatCurriculumGradeLabel(grade: number | null | undefined): string {
+export function formatCurriculumGradeLabel(grade: number | null | undefined, schoolLevel?: string): string {
   if (!isFiniteGrade(grade)) return "\uBBF8\uC815";
-  if (grade <= 6) return `\uCD08${grade}`;
-  if (grade <= 9) return `\uC911${grade - 6}`;
-  return `\uACE0${grade - 9}`;
+  if (schoolLevel === "high") return `\uACE0${grade}`;
+  if (schoolLevel === "middle") return `\uC911${grade}`;
+  if (schoolLevel === "elementary") return `\uCD08${grade}`;
+  return String(grade);
 }
 
 export function getEffectiveSchoolGrade(
   schoolLevel: AcademicSchoolLevel | null | undefined,
   grade: number | null | undefined,
-  now: Date = new Date()
+  _now: Date = new Date()
 ): EffectiveSchoolGrade | null {
+  // Profile is the source of truth — do not auto-promote across the March 1 boundary.
+  // Auto-promotion was previously bumping current 중3/고1 students into the next school level
+  // and surfacing as wrong grade labels and off-grade recommendations. Profile updates are
+  // now expected to happen out-of-band when a student advances.
   const normalizedLevel = toNormalizedSchoolLevel(schoolLevel);
   if (!normalizedLevel || !isFiniteGrade(grade)) return null;
 
-  const effective = isAfterPromotionDate(now)
-    ? getPromotedSchoolGrade(normalizedLevel, grade)
-    : { schoolLevel: normalizedLevel, grade };
-
-  if (!effective) return null;
-
   return {
-    schoolLevel: effective.schoolLevel,
-    grade: effective.grade,
-    label: formatSchoolGrade(effective.schoolLevel, effective.grade),
-    promoted: isAfterPromotionDate(now),
+    schoolLevel: normalizedLevel,
+    grade,
+    label: formatSchoolGrade(normalizedLevel, grade),
+    promoted: false,
   };
 }
 
 export function getAcademicContentFallbackMessage(
-  schoolLevel: AcademicSchoolLevel | null | undefined,
-  grade: number | null | undefined,
-  now: Date = new Date()
+  _schoolLevel: AcademicSchoolLevel | null | undefined,
+  _grade: number | null | undefined,
+  _now: Date = new Date()
 ): string | null {
-  const effective = getEffectiveSchoolGrade(schoolLevel, grade, now);
-  if (!effective) return null;
-  if (effective.schoolLevel !== "high") return null;
-  return "\uACE0\uB4F1 \uCF58\uD150\uCE20\uB294 \uC900\uBE44 \uC911\uC785\uB2C8\uB2E4. \uD604\uC7AC\uB294 \uC9113 \uC2EC\uD654 \uBBF8\uC158\uC744 \uBA3C\uC800 \uCD94\uCC9C\uD569\uB2C8\uB2E4.";
+  // Empty-state copy now lives at the call site so it reflects the actual selected tab and
+  // whether the v_student_effective_grade view returned \uC608\uC2B5 \uBAA8\uB4DC. The DB is the single source
+  // of truth for which (school_level, grade) buckets have published content.
+  return null;
 }

@@ -9,12 +9,13 @@ import ReportListItem from "@/components/reports/ReportListItem";
 import {
   createReportPublishedAnnouncement,
   formatReportMonth,
-  getOwnerMonthlyReportCoverage,
+  getOwnerReportMissingOverview,
+  getOwnerReportMissingStatus,
   listOwnerReports,
   upsertEnglishMetrics,
   upsertMonthlyReport,
   uploadReportPdf,
-  type OwnerMonthlyReportCoverage,
+  type OwnerReportMissingRow,
   type ReportListItem as ReportListItemType,
 } from "@/lib/reports";
 import { ensureOwnerAcademy } from "@/lib/academy";
@@ -31,7 +32,7 @@ const STUDENTS_ACADEMY_LINK_REQUIRED_MESSAGE = "학생이 학원에 연결되어
 type StudentOption = {
   id: string;
   name: string | null;
-  school_level: "elem" | "mid" | "high" | null;
+  school_level: string | null;
   grade: number | null;
   class_label: string | null;
   student_no: string | null;
@@ -47,11 +48,10 @@ function clampScore(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function schoolLevelLabel(level: StudentOption["school_level"]): string {
-  if (level === "elem") return "초등";
-  if (level === "mid") return "중등";
-  if (level === "high") return "고등";
-  return "";
+
+const LEVEL_MAP: Record<string, string> = { elementary: "초등", middle: "중등", high: "고등", elem: "초등", mid: "중등" };
+function schoolLevelLabel(level: string | null | undefined): string {
+  return LEVEL_MAP[level ?? ""] ?? "";
 }
 
 function formatStudentOptionLabel(student: StudentOption): string {
@@ -62,20 +62,9 @@ function formatStudentOptionLabel(student: StudentOption): string {
   return `${level ? `${level} ` : ""}${grade}${classLabel} ${name}`.trim();
 }
 
-function formatCoverageGroupLabel(group: {
-  school_level: string | null;
-  grade: number | null;
-  class_label: string | null;
-}): string {
-  const level = schoolLevelLabel((group.school_level as StudentOption["school_level"]) ?? null);
-  const grade = group.grade != null ? `${group.grade}학년` : "학년 미정";
-  const classLabel = group.class_label?.trim() ? ` ${group.class_label.trim()}반` : "";
-  return `${level ? `${level} ` : ""}${grade}${classLabel}`.trim();
-}
-
-function gradeOptionsForSchoolLevel(level: "" | "elem" | "mid" | "high"): string[] {
-  if (level === "elem") return ["1", "2", "3", "4", "5", "6"];
-  if (level === "mid" || level === "high") return ["1", "2", "3"];
+function gradeOptionsForSchoolLevel(level: "" | "elementary" | "middle" | "high"): string[] {
+  if (level === "elementary") return ["1", "2", "3", "4", "5", "6"];
+  if (level === "middle" || level === "high") return ["1", "2", "3"];
   return ["1", "2", "3", "4", "5", "6"];
 }
 
@@ -105,14 +94,18 @@ export default function OwnerReportsPage() {
 
   const [students, setStudents] = useState<StudentOption[]>([]);
   const [items, setItems] = useState<ReportListItemType[]>([]);
-  const [coverage, setCoverage] = useState<OwnerMonthlyReportCoverage | null>(null);
+  const [missingOverview, setMissingOverview] = useState<OwnerReportMissingRow[]>([]);
+  const [missingStatusFilter, setMissingStatusFilter] = useState<"all" | "missing" | "chronic">("all");
+  const [missingSchoolLevelFilter, setMissingSchoolLevelFilter] = useState<"" | "elementary" | "middle" | "high">("");
+  const [showCompletedStudents, setShowCompletedStudents] = useState(false);
+  const [autoSelectedStudentId, setAutoSelectedStudentId] = useState<string | null>(null);
 
   const [studentId, setStudentId] = useState<string | null>(null);
   const [month, setMonth] = useState(defaultMonth());
   const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [scores, setScores] = useState({ vocab: 0, reading: 0, grammar: 0, listening: 0, note: "" });
+  const [scores, setScores] = useState<{ vocab: number; reading: number; grammar: number; listening: number; note: string }>({ vocab: 0, reading: 0, grammar: 0, listening: 0, note: "" });
   const [moveToNextAfterSave, setMoveToNextAfterSave] = useState(true);
-  const [schoolLevelFilter, setSchoolLevelFilter] = useState<"" | "elem" | "mid" | "high">("");
+  const [schoolLevelFilter, setSchoolLevelFilter] = useState<"" | "elementary" | "middle" | "high">("");
   const [gradeFilter, setGradeFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
   const [studentQuery, setStudentQuery] = useState("");
@@ -127,6 +120,7 @@ export default function OwnerReportsPage() {
   const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
   const [ownerAcademyId, setOwnerAcademyId] = useState<string | null>(null);
   const loggedKeysRef = useRef<Set<string>>(new Set());
+  const formRef = useRef<HTMLDivElement>(null);
   const numericGrade = gradeFilter ? Number(gradeFilter) : null;
   const gradeOptions = useMemo(() => gradeOptionsForSchoolLevel(schoolLevelFilter), [schoolLevelFilter]);
   const availableClasses = useMemo(() => {
@@ -208,6 +202,68 @@ export default function OwnerReportsPage() {
   }, [activeQueryStatus]);
   const isMissingFocused = activeQueryStatus === "missing";
 
+  const missingKpi = useMemo(() => {
+    const total = missingOverview.length;
+    const done = missingOverview.filter((row) => row.this_month_done).length;
+    const missing = total - done;
+    const chronic = missingOverview.filter((row) => {
+      const status = getOwnerReportMissingStatus(row);
+      return status === "chronic_2m" || status === "chronic_3m";
+    }).length;
+    return { total, done, missing, chronic };
+  }, [missingOverview]);
+
+  const deadlineMeta = useMemo(() => {
+    if (missingOverview.length === 0) return null;
+    const days = missingOverview[0].days_until_deadline;
+    const monthLabel = missingOverview[0].this_month_str;
+    return { days, monthLabel };
+  }, [missingOverview]);
+
+  const filteredMissingRows = useMemo(() => {
+    return missingOverview.filter((row) => {
+      if (missingSchoolLevelFilter && row.school_level !== missingSchoolLevelFilter) return false;
+      if (missingStatusFilter === "missing") {
+        return !row.this_month_done;
+      }
+      if (missingStatusFilter === "chronic") {
+        const status = getOwnerReportMissingStatus(row);
+        return status === "chronic_2m" || status === "chronic_3m";
+      }
+      return true;
+    });
+  }, [missingOverview, missingSchoolLevelFilter, missingStatusFilter]);
+
+  const missingGroups = useMemo(() => {
+    const map = new Map<string, { label: string; rows: OwnerReportMissingRow[]; sample: OwnerReportMissingRow }>();
+    for (const row of filteredMissingRows) {
+      const existing = map.get(row.group_label);
+      if (existing) {
+        existing.rows.push(row);
+      } else {
+        map.set(row.group_label, { label: row.group_label, rows: [row], sample: row });
+      }
+    }
+    const rankGroup = (rows: OwnerReportMissingRow[]) => {
+      let best = 4;
+      for (const row of rows) {
+        const status = getOwnerReportMissingStatus(row);
+        const rank = status === "chronic_3m" ? 0
+          : status === "chronic_2m" ? 1
+          : status === "missing_this_month" ? 2
+          : 3;
+        if (rank < best) best = rank;
+      }
+      return best;
+    };
+    return Array.from(map.values()).sort((a, b) => {
+      const ra = rankGroup(a.rows);
+      const rb = rankGroup(b.rows);
+      if (ra !== rb) return ra - rb;
+      return a.label.localeCompare(b.label, "ko");
+    });
+  }, [filteredMissingRows]);
+
   const logErrorOnce = (key: string, message: string, cause: unknown, extra?: Record<string, unknown>) => {
     const pretty = toPrettyErrorString(cause);
     const dedupeKey = `${key}:${pretty}`;
@@ -225,6 +281,19 @@ export default function OwnerReportsPage() {
     if (!loading) void refreshList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterMonth, filterStudentId]);
+
+  useEffect(() => {
+    const queryStudentId = searchParams.get("student");
+    if (!queryStudentId || !isUuid(queryStudentId)) return;
+    if (autoSelectedStudentId === queryStudentId) return;
+    if (students.length === 0) return;
+    const target = students.find((s) => s.id === queryStudentId);
+    if (!target) return;
+    selectStudent(target);
+    setAutoSelectedStudentId(queryStudentId);
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, students]);
 
   useEffect(() => {
     const parsed = parseQueryStatus(searchParams.get("status"));
@@ -371,12 +440,12 @@ export default function OwnerReportsPage() {
 
   const refreshCoverage = async () => {
     if (needsAcademySetup) {
-      setCoverage(null);
+      setMissingOverview([]);
       return;
     }
     try {
-      const nextCoverage = await getOwnerMonthlyReportCoverage();
-      setCoverage(nextCoverage);
+      const nextOverview = await getOwnerReportMissingOverview();
+      setMissingOverview(nextOverview);
     } catch (e: unknown) {
       logErrorOnce("owner-reports-coverage", "Owner reports coverage load failed:", e, {
         userId: ownerUserId,
@@ -437,23 +506,10 @@ export default function OwnerReportsPage() {
         note: scores.note.trim() || null,
       });
 
-      let publishFailed = false;
-      try {
-        await createReportPublishedAnnouncement(report.id);
-      } catch (publishError: unknown) {
-        publishFailed = true;
-        logErrorOnce("owner-reports-publish", "Owner report publish announcement failed:", publishError, {
-          userId: ownerUserId,
-          academyId: ownerAcademyId,
-          reportId: report.id,
-        });
-      }
-
-      const successMessage = publishFailed
-        ? "리포트를 저장했습니다. 알리미 발송에 실패했습니다."
-        : reachedEndOfFilteredStudents
-          ? "현재 필터의 마지막 학생까지 저장했습니다."
-          : "리포트를 저장/발송했습니다.";
+      // 알리미는 DB 트리거가 자동 생성하므로 여기서 별도 INSERT 불필요
+      const successMessage = reachedEndOfFilteredStudents
+        ? "현재 필터의 마지막 학생까지 저장했습니다."
+        : "리포트를 저장했습니다.";
       if (nextStudent) {
         selectStudent(nextStudent);
         setSuccess(successMessage);
@@ -522,28 +578,25 @@ export default function OwnerReportsPage() {
     }
   };
 
-  const handleWorkOnGroup = (group: {
-    school_level: string | null;
-    grade: number | null;
-    class_label: string | null;
-  }) => {
-    const nextSchoolLevel = (group.school_level as "" | "elem" | "mid" | "high" | null) ?? "";
-    const nextGrade = group.grade != null ? String(group.grade) : "";
-    const nextClass = group.class_label?.trim() ?? "";
-    setSchoolLevelFilter(nextSchoolLevel);
-    setGradeFilter(nextGrade);
-    setClassFilter(nextClass);
-    setStudentQuery("");
-    setError(null);
-    setSuccess(null);
+  const handleJumpToStudent = (targetStudentId: string) => {
+    if (!isUuid(targetStudentId)) return;
+    setAutoSelectedStudentId(null);
+    router.push(`${pathname}?student=${targetStudentId}`);
+  };
 
-    const firstStudent = students.find((student) => {
-      const sameSchoolLevel = !nextSchoolLevel || student.school_level === nextSchoolLevel;
-      const sameGrade = !group.grade || student.grade === group.grade;
-      const sameClass = !nextClass || (student.class_label?.trim() ?? "") === nextClass;
-      return sameSchoolLevel && sameGrade && sameClass;
+  const handleJumpToFirstMissingInGroup = (rows: OwnerReportMissingRow[]) => {
+    const ranked = [...rows].sort((a, b) => {
+      const score = (r: OwnerReportMissingRow) => {
+        const status = getOwnerReportMissingStatus(r);
+        return status === "chronic_3m" ? 0
+          : status === "chronic_2m" ? 1
+          : status === "missing_this_month" ? 2
+          : 3;
+      };
+      return score(a) - score(b);
     });
-    if (firstStudent) selectStudent(firstStudent);
+    const first = ranked.find((r) => !r.this_month_done) ?? ranked[0];
+    if (first) handleJumpToStudent(first.student_id);
   };
 
   const resetStatusFocus = () => {
@@ -556,6 +609,240 @@ export default function OwnerReportsPage() {
   if (loading) {
     return <PageShell title="리포트 관리">로딩 중...</PageShell>;
   }
+
+  const missingOverviewSection = (
+    <SectionCard header="이번 달 리포트 누락 현황">
+      {isMissingFocused && (
+        <div className="mb-3 inline-flex rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-1 text-xs text-[var(--accent)]">
+          현재: 리포트 누락 보기
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 md:p-5">
+          <div className="text-xs text-[var(--text-muted)]">이번 달 대상 학생</div>
+          <div className="mt-2 text-2xl font-semibold text-[var(--text)]">{missingKpi.total}명</div>
+        </div>
+        <div className="rounded-2xl border border-[var(--success-text)] bg-[var(--success-bg)] p-4 md:p-5">
+          <div className="text-xs text-[var(--success-text)]">리포트 작성 완료</div>
+          <div className="mt-2 text-2xl font-semibold text-[var(--success-text)]">{missingKpi.done}명</div>
+        </div>
+        <div className="rounded-2xl border border-[var(--accent)] bg-[var(--accent-soft)] p-4 md:p-5">
+          <div className="text-xs text-[var(--accent)]">누락</div>
+          <div className="mt-2 text-2xl font-semibold text-[var(--accent)]">{missingKpi.missing}명</div>
+        </div>
+        <div className="rounded-2xl border border-[var(--danger-text)] bg-[var(--danger-bg)] p-4 md:p-5">
+          <div className="text-xs text-[var(--danger-text)]">⚠️ 반복 누락 (2개월+)</div>
+          <div className="mt-2 text-2xl font-semibold text-[var(--danger-text)]">{missingKpi.chronic}명</div>
+        </div>
+      </div>
+
+      {deadlineMeta && deadlineMeta.days <= 7 && missingKpi.total > 0 && (() => {
+        const overdue = deadlineMeta.days < 0;
+        const tone = overdue
+          ? { border: "border-[var(--danger-text)]", bg: "bg-[var(--danger-bg)]", text: "text-[var(--danger-text)]", fill: "bg-[var(--danger-text)]" }
+          : { border: "border-[var(--warning-border)]", bg: "bg-[var(--warning-bg)]", text: "text-[var(--warning-text)]", fill: "bg-[var(--warning-border)]" };
+        const pct = missingKpi.total > 0 ? Math.round((missingKpi.done / missingKpi.total) * 100) : 0;
+        return (
+          <div className={`mt-4 rounded-2xl border ${tone.border} ${tone.bg} p-4`}>
+            <div className={`flex flex-wrap items-center gap-2 text-sm font-semibold ${tone.text}`}>
+              <span>⏰</span>
+              {overdue ? (
+                <>
+                  <span>이번 달 마감이 {Math.abs(deadlineMeta.days)}일 지났어요</span>
+                  <span className={`rounded-full border ${tone.border} bg-[var(--card)] px-2 py-0.5 text-xs ${tone.text}`}>마감 지남</span>
+                </>
+              ) : (
+                <span>이번 달 마감까지 {deadlineMeta.days}일 남았어요</span>
+              )}
+              <span className="text-xs font-normal opacity-80">
+                · 작성 완료 {missingKpi.done}/{missingKpi.total}명 ({pct}%)
+              </span>
+            </div>
+            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-[var(--card)]">
+              <div className={`h-full ${tone.fill}`} style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        );
+      })()}
+
+      <div className="mt-4 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between">
+        <div className="flex flex-wrap gap-1 rounded-full border border-[var(--border)] bg-[var(--card-soft)] p-1 text-xs">
+          {([
+            { value: "all", label: "전체" },
+            { value: "missing", label: "누락만" },
+            { value: "chronic", label: "반복 누락만" },
+          ] as const).map((opt) => {
+            const active = missingStatusFilter === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                className={`rounded-full px-3 py-1.5 transition ${
+                  active
+                    ? "bg-[var(--accent)] text-[var(--bg)]"
+                    : "text-[var(--text-muted)] hover:text-[var(--text)]"
+                }`}
+                onClick={() => setMissingStatusFilter(opt.value)}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap gap-1 rounded-full border border-[var(--border)] bg-[var(--card-soft)] p-1 text-xs">
+          {([
+            { value: "", label: "전체" },
+            { value: "elementary", label: "초등" },
+            { value: "middle", label: "중등" },
+            { value: "high", label: "고등" },
+          ] as const).map((opt) => {
+            const active = missingSchoolLevelFilter === opt.value;
+            return (
+              <button
+                key={opt.value || "all"}
+                type="button"
+                className={`rounded-full px-3 py-1.5 transition ${
+                  active
+                    ? "bg-[var(--accent)] text-[var(--bg)]"
+                    : "text-[var(--text-muted)] hover:text-[var(--text)]"
+                }`}
+                onClick={() => setMissingSchoolLevelFilter(opt.value)}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        <label className="inline-flex items-center gap-2 text-xs text-[var(--text-muted)]">
+          <input
+            type="checkbox"
+            checked={showCompletedStudents}
+            onChange={(e) => setShowCompletedStudents(e.target.checked)}
+          />
+          작성 완료 학생도 보기
+        </label>
+      </div>
+
+      {missingKpi.missing === 0 && missingKpi.total > 0 && (
+        <div className="mt-4 rounded-xl border border-[var(--success-text)] bg-[var(--success-bg)] p-3 text-sm text-[var(--success-text)]">
+          이번 달 리포트가 모든 학생에게 작성되었습니다.
+        </div>
+      )}
+
+      <div className="mt-4 space-y-3">
+        {missingGroups.length === 0 ? (
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] p-4 text-sm text-[var(--text-muted)]">
+            조건에 맞는 학생이 없습니다.
+          </div>
+        ) : (
+          missingGroups.map((group) => {
+            const total = group.rows.length;
+            const doneCount = group.rows.filter((r) => r.this_month_done).length;
+            const missingCount = total - doneCount;
+            const hasMissing = missingCount > 0;
+            const visibleRows = showCompletedStudents
+              ? group.rows
+              : group.rows.filter((r) => !r.this_month_done);
+            const sortedVisible = [...visibleRows].sort((a, b) => {
+              const score = (r: OwnerReportMissingRow) => {
+                const status = getOwnerReportMissingStatus(r);
+                return status === "chronic_3m" ? 0
+                  : status === "chronic_2m" ? 1
+                  : status === "missing_this_month" ? 2
+                  : 3;
+              };
+              const ra = score(a);
+              const rb = score(b);
+              if (ra !== rb) return ra - rb;
+              return (a.student_name ?? "").localeCompare(b.student_name ?? "", "ko");
+            });
+            return (
+              <div
+                key={group.label}
+                className={`rounded-2xl border p-4 ${
+                  hasMissing
+                    ? "border-[var(--accent)] bg-[var(--accent-soft)]"
+                    : "border-[var(--border)] bg-[var(--card-soft)]"
+                }`}
+              >
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-[var(--text)]">{group.label}</div>
+                    <div className="mt-1 text-xs text-[var(--text-muted)]">
+                      {total}명 중 {doneCount}명 완료 / {missingCount}명 누락
+                    </div>
+                  </div>
+                  {hasMissing && (
+                    <button
+                      type="button"
+                      className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--text)] md:w-auto"
+                      onClick={() => handleJumpToFirstMissingInGroup(group.rows)}
+                    >
+                      한번에 작성하기 →
+                    </button>
+                  )}
+                </div>
+                {sortedVisible.length > 0 && (
+                  <div className="mt-3 space-y-1.5">
+                    {sortedVisible.map((row) => {
+                      const status = getOwnerReportMissingStatus(row);
+                      let badge: { label: string; cls: string } | null = null;
+                      if (status === "chronic_3m") {
+                        badge = {
+                          label: "🔁 3개월 연속",
+                          cls: "border-[var(--danger-text)] bg-[var(--danger-bg)] text-[var(--danger-text)]",
+                        };
+                      } else if (status === "chronic_2m") {
+                        badge = {
+                          label: "🔁 2개월 연속",
+                          cls: "border-[var(--warning-border)] bg-[var(--warning-bg)] text-[var(--warning-text)]",
+                        };
+                      } else if (status === "missing_this_month") {
+                        badge = {
+                          label: "이번 달 누락",
+                          cls: "border-[var(--border)] bg-[var(--card)] text-[var(--text-muted)]",
+                        };
+                      } else {
+                        badge = {
+                          label: "작성 완료",
+                          cls: "border-[var(--success-text)] bg-[var(--success-bg)] text-[var(--success-text)]",
+                        };
+                      }
+                      return (
+                        <div
+                          key={row.student_id}
+                          className="flex flex-col gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-medium text-[var(--text)]">
+                              {row.student_name ?? "이름 없음"}
+                            </span>
+                            <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${badge.cls}`}>
+                              {badge.label}
+                            </span>
+                          </div>
+                          {!row.this_month_done && (
+                            <button
+                              type="button"
+                              className="w-full rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--accent)] sm:w-auto"
+                              onClick={() => handleJumpToStudent(row.student_id)}
+                            >
+                              ▶ 이 학생부터
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </SectionCard>
+  );
 
   return (
     <PageShell title="리포트 관리" subtitle="월별 수학/영어 성취도를 저장/발송합니다." maxWidthClassName="max-w-6xl">
@@ -597,68 +884,9 @@ export default function OwnerReportsPage() {
         </SectionCard>
       )}
 
-      {isMissingFocused && (
-        <SectionCard header="이번 달 리포트 누락 현황">
-          <div className="mb-3 inline-flex rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-1 text-xs text-[var(--accent)]">
-            현재: 리포트 누락 보기
-          </div>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 md:p-5">
-              <div className="text-xs text-[var(--text-muted)]">이번 달 대상 학생</div>
-              <div className="mt-2 text-2xl font-semibold text-[var(--text)]">{coverage?.totalStudents ?? 0}명</div>
-            </div>
-            <div className="rounded-2xl border border-[var(--success-text)] bg-[var(--success-bg)] p-4 md:p-5">
-              <div className="text-xs text-[var(--success-text)]">리포트 작성 완료</div>
-              <div className="mt-2 text-2xl font-semibold text-[var(--success-text)]">{coverage?.reportedStudents ?? 0}명</div>
-            </div>
-            <div className="rounded-2xl border border-[var(--accent)] bg-[var(--accent-soft)] p-4 md:p-5">
-              <div className="text-xs text-[var(--accent)]">누락</div>
-              <div className="mt-2 text-2xl font-semibold text-[var(--accent)]">{coverage?.missingStudents ?? 0}명</div>
-            </div>
-          </div>
-          <div className="mt-4 space-y-2">
-            {(coverage?.byGroup ?? []).map((group) => {
-              const hasMissing = group.missing > 0;
-              return (
-                <div
-                  key={`focus-${group.school_level ?? "none"}-${group.grade ?? "none"}-${group.class_label ?? "none"}`}
-                  className={`flex flex-col gap-3 rounded-2xl border p-4 md:flex-row md:items-center md:justify-between ${
-                    hasMissing
-                      ? "border-[var(--accent)] bg-[var(--accent-soft)]"
-                      : "border-[var(--border)] bg-[var(--card-soft)]"
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold text-[var(--text)]">{formatCoverageGroupLabel(group)}</div>
-                    <div className="mt-1 text-xs text-[var(--text-muted)]">
-                      {group.total}명 중 {group.reported}명 완료 / {group.missing}명 누락
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className={`rounded-full border px-2 py-1 text-xs ${
-                        hasMissing
-                          ? "border-[var(--accent)] bg-[var(--card)] text-[var(--accent)]"
-                          : "border-[var(--border)] bg-[var(--card)] text-[var(--text-muted)]"
-                      }`}
-                    >
-                      누락 {group.missing}명
-                    </span>
-                    <button
-                      type="button"
-                      className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--text)] md:w-auto"
-                      onClick={() => handleWorkOnGroup(group)}
-                    >
-                      이 반 작업하기
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </SectionCard>
-      )}
+      {isMissingFocused && missingOverviewSection}
 
+      <div ref={formRef}>
       <SectionCard header="리포트 입력">
         {error && <div className="mb-4 rounded-xl border border-[var(--danger-text)] bg-[var(--danger-bg)] p-3 text-sm text-[var(--danger-text)]">{error}</div>}
         {success && <div className="mb-4 rounded-xl border border-[var(--success-text)] bg-[var(--success-bg)] p-3 text-sm text-[var(--success-text)]">{success}</div>}
@@ -689,15 +917,15 @@ export default function OwnerReportsPage() {
                 className="mt-1 w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm"
                 value={schoolLevelFilter}
                 onChange={(e) => {
-                  setSchoolLevelFilter((e.target.value as "" | "elem" | "mid" | "high") || "");
+                  setSchoolLevelFilter((e.target.value as "" | "elementary" | "middle" | "high") || "");
                   setGradeFilter("");
                   setClassFilter("");
                 }}
                 disabled={needsAcademySetup || students.length === 0}
               >
                 <option value="">전체</option>
-                <option value="elem">초등</option>
-                <option value="mid">중등</option>
+                <option value="elementary">초등</option>
+                <option value="middle">중등</option>
                 <option value="high">고등</option>
               </select>
             </label>
@@ -822,14 +1050,17 @@ export default function OwnerReportsPage() {
         <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
           {(["vocab", "reading", "grammar", "listening"] as const).map((key) => (
             <label key={key} className="text-sm text-[var(--text-muted)]">
-              {key}
+              {{ vocab: "어휘", reading: "독해", grammar: "문법", listening: "듣기" }[key]}
               <input
                 type="number"
                 min={0}
                 max={100}
                 className="mt-1 w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm"
-                value={scores[key]}
-                onChange={(e) => setScores((prev) => ({ ...prev, [key]: clampScore(Number(e.target.value)) }))}
+                value={Number(scores[key])}
+                onChange={(e) => {
+                  const n = parseInt(e.target.value, 10);
+                  setScores((prev) => ({ ...prev, [key]: Number.isNaN(n) ? 0 : Math.min(100, Math.max(0, n)) }));
+                }}
               />
             </label>
           ))}
@@ -853,70 +1084,9 @@ export default function OwnerReportsPage() {
           {saving ? "저장 중..." : "저장/발송"}
         </button>
       </SectionCard>
+      </div>
 
-      {!isMissingFocused && <SectionCard header="이번 달 리포트 누락 현황">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 md:p-5">
-            <div className="text-xs text-[var(--text-muted)]">이번 달 대상 학생</div>
-            <div className="mt-2 text-2xl font-semibold text-[var(--text)]">{coverage?.totalStudents ?? 0}명</div>
-          </div>
-          <div className="rounded-2xl border border-[var(--success-text)] bg-[var(--success-bg)] p-4 md:p-5">
-            <div className="text-xs text-[var(--success-text)]">리포트 작성 완료</div>
-            <div className="mt-2 text-2xl font-semibold text-[var(--success-text)]">{coverage?.reportedStudents ?? 0}명</div>
-          </div>
-          <div className="rounded-2xl border border-[var(--accent)] bg-[var(--accent-soft)] p-4 md:p-5">
-            <div className="text-xs text-[var(--accent)]">누락</div>
-            <div className="mt-2 text-2xl font-semibold text-[var(--accent)]">{coverage?.missingStudents ?? 0}명</div>
-          </div>
-        </div>
-
-        {coverage?.missingStudents === 0 ? (
-          <div className="mt-4 rounded-xl border border-[var(--success-text)] bg-[var(--success-bg)] p-3 text-sm text-[var(--success-text)]">
-            이번 달 리포트가 모든 학생에게 작성되었습니다.
-          </div>
-        ) : null}
-
-        <div className="mt-4 space-y-2">
-          {(coverage?.byGroup ?? []).map((group) => {
-            const hasMissing = group.missing > 0;
-            return (
-              <div
-                key={`${group.school_level ?? "none"}-${group.grade ?? "none"}-${group.class_label ?? "none"}`}
-                className={`flex flex-col gap-3 rounded-2xl border p-4 md:flex-row md:items-center md:justify-between ${
-                  hasMissing
-                    ? "border-[var(--accent)] bg-[var(--accent-soft)]"
-                    : "border-[var(--border)] bg-[var(--card-soft)]"
-                }`}
-              >
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-[var(--text)]">{formatCoverageGroupLabel(group)}</div>
-                  <div className="mt-1 text-xs text-[var(--text-muted)]">
-                    {group.total}명 중 {group.reported}명 완료 / {group.missing}명 누락
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={`rounded-full border px-2 py-1 text-xs ${
-                      hasMissing
-                        ? "border-[var(--accent)] bg-[var(--card)] text-[var(--accent)]"
-                        : "border-[var(--border)] bg-[var(--card)] text-[var(--text-muted)]"
-                    }`}
-                  >
-                    누락 {group.missing}명
-                  </span>
-                  <button
-                    type="button"
-                    className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--text)] md:w-auto"
-                    onClick={() => handleWorkOnGroup(group)}
-                  >
-                    이 반 작업하기
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </SectionCard>}
+      {!isMissingFocused && missingOverviewSection}
 
       <SectionCard
         header={(

@@ -282,7 +282,7 @@ export const QUALITY_MISSIONS_6: PreparedMissionAsset[] = [
     estimated_minutes: 12,
     unit_lookup: {
       school_level: "middle",
-      grade: 7,
+      grade: 1,
       unit_name: "문자와 식",
     },
     mission_json: buildMissionJson({
@@ -342,7 +342,7 @@ export const QUALITY_MISSIONS_6: PreparedMissionAsset[] = [
     estimated_minutes: 15,
     unit_lookup: {
       school_level: "middle",
-      grade: 8,
+      grade: 2,
       unit_name: "연립방정식",
     },
     mission_json: buildMissionJson({
@@ -402,7 +402,7 @@ export const QUALITY_MISSIONS_6: PreparedMissionAsset[] = [
     estimated_minutes: 15,
     unit_lookup: {
       school_level: "middle",
-      grade: 9,
+      grade: 3,
       unit_name: "이차함수",
     },
     mission_json: buildMissionJson({

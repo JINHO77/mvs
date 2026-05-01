@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <radialGradient id="bgfw" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFF0F5"/>
+      <stop offset="100%" stop-color="#FFC0D8"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#bgfw)" stroke="#DB2777" stroke-width="2"/>
+  <!-- 달력 -->
+  <rect x="25" y="32" width="70" height="58" rx="8" fill="#F9A8D4" stroke="#EC4899" stroke-width="1.5"/>
+  <rect x="25" y="32" width="70" height="16" rx="8" fill="#DB2777"/>
+  <rect x="25" y="42" width="70" height="6" rx="0" fill="#DB2777"/>
+  <!-- 달력 헤더 -->
+  <text x="60" y="44" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="700" fill="#FFFFFF" letter-spacing="0.5">이번 주 완료!</text>
+  <!-- 날짜 그리드 -->
+  <rect x="30" y="52" width="12" height="10" rx="2" fill="#FECDD3" stroke="#FB7185" stroke-width="0.5"/>
+  <rect x="44" y="52" width="12" height="10" rx="2" fill="#FECDD3" stroke="#FB7185" stroke-width="0.5"/>
+  <rect x="58" y="52" width="12" height="10" rx="2" fill="#FECDD3" stroke="#FB7185" stroke-width="0.5"/>
+  <rect x="72" y="52" width="12" height="10" rx="2" fill="#FECDD3" stroke="#FB7185" stroke-width="0.5"/>
+  <rect x="30" y="64" width="12" height="10" rx="2" fill="#FECDD3" stroke="#FB7185" stroke-width="0.5"/>
+  <!-- 별표시된 날 -->
+  <rect x="44" y="64" width="12" height="10" rx="2" fill="#EC4899" stroke="#DB2777" stroke-width="0.5"/>
+  <rect x="58" y="64" width="12" height="10" rx="2" fill="#EC4899" stroke="#DB2777" stroke-width="0.5"/>
+  <rect x="72" y="64" width="12" height="10" rx="2" fill="#DB2777" stroke="#BE185D" stroke-width="1"/>
+  <!-- 텍스트들 -->
+  <text x="36" y="61" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#BE185D">월</text>
+  <text x="50" y="61" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#BE185D">화</text>
+  <text x="64" y="61" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#BE185D">수</text>
+  <text x="78" y="61" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#BE185D">목</text>
+  <text x="36" y="73" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#BE185D">금</text>
+  <text x="50" y="73" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#FFFFFF">토</text>
+  <text x="64" y="73" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#FFFFFF">일</text>
+  <text x="78" y="73" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="700" fill="#FFFFFF">✓</text>
+  <!-- 루트 완료 표시 -->
+  <rect x="30" y="78" width="60" height="8" rx="3" fill="#EC4899" opacity="0.7"/>
+  <text x="60" y="85" text-anchor="middle" font-family="sans-serif" font-size="6.5" font-weight="700" fill="#FFFFFF">주간 루트 완료!</text>
+  <polygon points="60,14 62,20 68,20 63,24 65,30 60,26 55,30 57,24 52,20 58,20" fill="#FFD700" stroke="#F59E0B" stroke-width="0.5"/>
+  <text x="60" y="101" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="700" fill="#831843" letter-spacing="0.5">일주일의 시작</text>
+  <text x="60" y="112" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#DB2777" letter-spacing="0.3">COMMON</text>
+</svg>

@@ -8,7 +8,7 @@ import {
   MISSION_TEMPLATES_SEED,
   MATH_MISSIONS_SEED_SUMMARY,
 } from "../src/data/missions";
-import type { MissionStep } from "../src/types/missions";
+import type { MissionStep, MissionStepType } from "../src/types/missions";
 
 type ExistingMissionRow = {
   id: string;
@@ -18,7 +18,7 @@ type ExistingMissionRow = {
 
 function toRuntimeSteps(
   seedSteps: Array<{
-    step_type: "intro" | "input" | "choice" | "concept";
+    step_type: MissionStepType;
     step_title: string;
     description: string;
     question?: string;

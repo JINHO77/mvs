@@ -3,7 +3,7 @@
 type StepFeedbackProps = {
   checked: boolean;
   isCorrect: boolean;
-  hint?: string;
+  hint?: string | { text: string };
   correctAnswer?: string | null;
   correctMessage?: string;
   retryMessage?: string;
@@ -30,7 +30,8 @@ export default function StepFeedback({
   return (
     <div className="space-y-2 rounded-xl border border-[#6A2B2B] bg-[#2A1414] p-3 text-sm text-[#FFB4B4]">
       <p>{retryMessage}</p>
-      {hint ? <p>힌트: {hint}</p> : null}
+      {hint && typeof hint === "string" ? <p>힌트: {hint}</p> : null}
+      {hint && typeof hint === "object" && hint.text ? <p>힌트: {hint.text}</p> : null}
       {correctAnswer ? <p>정답: {correctAnswer}</p> : null}
     </div>
   );

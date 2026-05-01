@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 110">
+  <!-- Left wing -->
+  <ellipse cx="18" cy="82" rx="15" ry="24" fill="#3B82F6" transform="rotate(-18 18 82)"/>
+  <ellipse cx="18" cy="82" rx="9" ry="18" fill="#60A5FA" transform="rotate(-18 18 82)"/>
+  <!-- Right wing -->
+  <ellipse cx="82" cy="82" rx="15" ry="24" fill="#3B82F6" transform="rotate(18 82 82)"/>
+  <ellipse cx="82" cy="82" rx="9" ry="18" fill="#60A5FA" transform="rotate(18 82 82)"/>
+  <!-- Body -->
+  <ellipse cx="50" cy="93" rx="22" ry="16" fill="#3B82F6"/>
+  <ellipse cx="50" cy="95" rx="14" ry="10" fill="#DBEAFE"/>
+  <!-- Book held by wings -->
+  <rect x="27" y="86" width="22" height="16" rx="2" fill="#FDE68A"/>
+  <rect x="37" y="86" width="2.5" height="16" fill="#D97706"/>
+  <!-- Ear tufts -->
+  <polygon points="32,28 26,8 40,24" fill="#2563EB"/>
+  <polygon points="68,28 74,8 60,24" fill="#2563EB"/>
+  <!-- Head -->
+  <circle cx="50" cy="56" r="30" fill="#3B82F6"/>
+  <!-- Face disk -->
+  <ellipse cx="50" cy="58" rx="23" ry="22" fill="#DBEAFE"/>
+  <!-- Eye rings -->
+  <circle cx="38" cy="55" r="11" fill="white"/>
+  <circle cx="62" cy="55" r="11" fill="white"/>
+  <circle cx="38" cy="55" r="8.5" fill="#1D4ED8"/>
+  <circle cx="62" cy="55" r="8.5" fill="#1D4ED8"/>
+  <circle cx="38" cy="55" r="5" fill="#0F172A"/>
+  <circle cx="62" cy="55" r="5" fill="#0F172A"/>
+  <circle cx="39.5" cy="53.5" r="2" fill="white"/>
+  <circle cx="63.5" cy="53.5" r="2" fill="white"/>
+  <!-- Beak -->
+  <polygon points="50,62 45,69 55,69" fill="#F59E0B"/>
+  <!-- Graduation cap hint -->
+  <rect x="34" y="27" width="32" height="5" rx="2" fill="#1E293B"/>
+  <rect x="44" y="22" width="12" height="6" rx="1" fill="#1E293B"/>
+  <line x1="66" y1="29" x2="70" y2="37" stroke="#1E293B" stroke-width="1.5"/>
+  <circle cx="70" cy="38" r="2.5" fill="#F59E0B"/>
+</svg>

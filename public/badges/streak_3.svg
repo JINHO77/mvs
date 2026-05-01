@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <radialGradient id="bgs3" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFF7ED"/>
+      <stop offset="100%" stop-color="#FED7AA"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#bgs3)" stroke="#F97316" stroke-width="2"/>
+  <!-- 3일 달력 스타일 -->
+  <rect x="25" y="35" width="22" height="22" rx="5" fill="#FED7AA" stroke="#FB923C" stroke-width="1.5"/>
+  <rect x="49" y="35" width="22" height="22" rx="5" fill="#FED7AA" stroke="#FB923C" stroke-width="1.5"/>
+  <rect x="73" y="35" width="22" height="22" rx="5" fill="#FB923C" stroke="#EA580C" stroke-width="1.5"/>
+  <!-- 체크 표시 -->
+  <polyline points="29,46 34,52 43,41" fill="none" stroke="#EA580C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="53,46 58,52 67,41" fill="none" stroke="#EA580C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="77,46 82,52 91,41" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 연결 화살표 -->
+  <line x1="47" y1="46" x2="49" y2="46" stroke="#FB923C" stroke-width="2"/>
+  <line x1="71" y1="46" x2="73" y2="46" stroke="#FB923C" stroke-width="2"/>
+  <!-- 불꽃 -->
+  <path d="M60 65 Q52 72 54 80 Q57 88 64 86 Q68 85 68 80 Q65 83 63 79 Q65 74 60 65Z" fill="#F97316"/>
+  <path d="M60 68 Q54 74 56 80 Q59 86 64 84 Q66 83 66 79 Q64 81 62 78 Q64 73 60 68Z" fill="#FB923C"/>
+  <path d="M60 71 Q55 76 57 81 Q60 85 63 83 Q64 82 64 79 Q63 80 62 78 Q63 74 60 71Z" fill="#FED7AA"/>
+  <text x="60" y="100" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="700" fill="#7C2D12" letter-spacing="0.5">3일 연속</text>
+  <text x="60" y="111" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#EA580C" letter-spacing="0.3">UNCOMMON</text>
+</svg>

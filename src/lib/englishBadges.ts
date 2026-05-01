@@ -1,5 +1,8 @@
 ﻿import { evaluateBadgesForStudent, getBadgeDefinitions, getBadgeProgress, getStudentBadgeShowcase } from "@/lib/badges";
-import type { BadgeShowcase, EarnedBadgeSummary, EnglishBadgeDefinition, EnglishBadgeKey } from "@/types/badges";
+import type { BadgeDefinition, BadgeKey, BadgeShowcase, EarnedBadgeSummary } from "@/types/badges";
+
+export type EnglishBadgeKey = BadgeKey;
+export type EnglishBadgeDefinition = BadgeDefinition;
 
 export const ENGLISH_BADGE_DEFINITIONS: EnglishBadgeDefinition[] = getBadgeDefinitions("english").filter(
   (badge): badge is EnglishBadgeDefinition => badge.subject === "english"
@@ -8,7 +11,7 @@ export const ENGLISH_BADGE_DEFINITIONS: EnglishBadgeDefinition[] = getBadgeDefin
 export async function getStudentEnglishBadges(studentId?: string): Promise<EarnedBadgeSummary[]> {
   const badges = await getBadgeProgress(studentId, "english");
   return badges
-    .filter((badge): badge is EarnedBadgeSummary => badge.earned && Boolean(badge.earnedAt))
+    .filter((badge) => badge.earned && Boolean(badge.earnedAt))
     .map((badge) => ({
       key: badge.key,
       subject: badge.subject,
@@ -26,7 +29,7 @@ export async function getStudentEnglishBadges(studentId?: string): Promise<Earne
       progressValue: badge.progressValue,
       targetValue: badge.targetValue,
       progressPercent: badge.progressPercent,
-      state: "earned",
+      state: "earned" as const,
     }))
     .sort((a, b) => b.earnedAt.localeCompare(a.earnedAt));
 }
@@ -46,4 +49,3 @@ export async function evaluateEnglishBadges(args: {
   });
 }
 
-export type { EnglishBadgeKey };

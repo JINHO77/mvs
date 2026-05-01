@@ -10,24 +10,26 @@ import {
   loadConfirmedSlots as loadConfirmedSlotsShared,
   loadOwnerBlockedSlots as loadOwnerBlockedSlotsShared,
 } from "@/lib/consultSlots";
-import Badge from "@/components/ui/Badge";
 import HomeLink from "@/components/common/HomeLink";
 import PageShell from "@/components/ui/PageShell";
 import { getLinkedStudentCountForGuardian } from "@/lib/parentGuard";
 import { supabase } from "@/lib/supabaseClient";
 import SectionCard from "@/components/ui/SectionCard";
 
-type SchoolLevel = "elem" | "mid" | "high";
-type RequestStatus = "requested" | "confirmed" | "canceled" | "cancelled" | "done" | "no_show";
+type SchoolLevel = "elementary" | "middle" | "high";
+type RequestStatus = "requested" | "confirmed" | "canceled" | "cancelled" | "done" | "no_show" | "rescheduled";
 
 type ConsultationRequest = {
   id: string;
   requested_start_at: string;
   duration_min: number;
-  type: "phone" | "in_person";
+  type: "phone" | "in_person" | "video";
   status: RequestStatus;
+  priority: "urgent" | "normal" | "low" | null;
   notes: string | null;
   manual_consultation_content: string | null;
+  video_link: string | null;
+  reminder_sent_at: string | null;
   created_at: string;
 };
 
@@ -35,7 +37,7 @@ type MyStudent = {
   student_id: string;
   name: string | null;
   email: string | null;
-  school_level: SchoolLevel | null;
+  school_level: string | null;
   grade: number | null;
   class_label: string | null;
   student_no: string | null;
@@ -108,32 +110,73 @@ function getStatusTone(status: RequestStatus): { cardClass: string; badgeClass: 
   }
   if (status === "done") {
     return {
-      cardClass: "border-[var(--border)] bg-[var(--card-muted)]",
+      cardClass: "border-[var(--border)] bg-[var(--card-soft)] opacity-70",
       badgeClass: "border-[var(--border)] bg-[var(--card)] text-[var(--text)]",
     };
   }
   if (status === "no_show") {
     return {
-      cardClass: "border-[var(--border)] bg-[var(--card-muted)]",
+      cardClass: "border-[var(--border)] bg-[var(--card-soft)] opacity-70",
       badgeClass: "border-[var(--border)] bg-[var(--card)] text-[var(--muted)]",
     };
   }
+  if (status === "rescheduled") {
+    return {
+      cardClass: "border-[var(--accent)] bg-[var(--accent-soft)]",
+      badgeClass: "border-[var(--accent)] bg-[var(--card)] text-[var(--accent)]",
+    };
+  }
   return {
-    cardClass: "border-[var(--accent)] bg-[var(--card-muted)]",
-    badgeClass: "border-[var(--accent)] bg-[var(--card)] text-[var(--text)]",
+    cardClass: "border-[var(--accent)] bg-[var(--accent-soft)]",
+    badgeClass: "border-[var(--accent)] bg-[var(--card)] text-[var(--accent)]",
   };
 }
 
-function getTypeLabel(type: "phone" | "in_person"): string {
-  return type === "phone" ? "\uC804\uD654" : "\uB300\uBA74";
+function getTypeLabel(type: "phone" | "in_person" | "video"): string {
+  if (type === "phone") return "\uC804\uD654";
+  if (type === "video") return "\uD654\uC0C1";
+  return "\uB300\uBA74";
 }
 
-function getStatusBadgeVariant(status: RequestStatus): "neutral" | "warning" | "success" | "danger" {
-  if (status === "requested") return "warning";
-  if (status === "confirmed" || status === "done") return "success";
-  if (status === "canceled" || status === "cancelled") return "danger";
-  return "neutral";
+function schoolLevelKo(level: string | null | undefined): string {
+  if (level === "elementary" || level === "elem") return "초등";
+  if (level === "middle" || level === "mid") return "중등";
+  if (level === "high") return "고등";
+  return "";
 }
+
+const STATUS_BADGE_MAP: Record<RequestStatus, { label: string; cls: string }> = {
+  requested: {
+    label: "요청",
+    cls: "border-yellow-500/30 bg-yellow-500/20 text-yellow-300",
+  },
+  confirmed: {
+    label: "확정",
+    cls: "border-green-500/30 bg-green-500/20 text-green-300",
+  },
+  rescheduled: {
+    label: "일정 변경",
+    cls: "border-blue-500/30 bg-blue-500/20 text-blue-300",
+  },
+  canceled: {
+    label: "취소",
+    cls: "border-gray-500/30 bg-gray-500/20 text-gray-400",
+  },
+  cancelled: {
+    label: "취소",
+    cls: "border-gray-500/30 bg-gray-500/20 text-gray-400",
+  },
+  done: {
+    label: "완료",
+    cls: "border-purple-500/30 bg-purple-500/20 text-purple-300",
+  },
+  no_show: {
+    label: "불참",
+    cls: "border-red-500/30 bg-red-500/20 text-red-300",
+  },
+};
+
+const IN_PROGRESS_STATUSES: RequestStatus[] = ["requested", "confirmed", "rescheduled"];
 
 export default function ConsultRequestPage() {
   const router = useRouter();
@@ -148,6 +191,8 @@ export default function ConsultRequestPage() {
   const [requests, setRequests] = useState<ConsultationRequest[]>([]);
   const [myStudents, setMyStudents] = useState<MyStudent[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [editMode, setEditMode] = useState(false);
+  const [showAllRequests, setShowAllRequests] = useState(false);
   const [highlightRequestId, setHighlightRequestId] = useState<string | null>(null);
   const [cancelingRequestId, setCancelingRequestId] = useState<string | null>(null);
   const prevRequestsRef = useRef<ConsultationRequest[]>([]);
@@ -166,6 +211,12 @@ export default function ConsultRequestPage() {
   const [type, setType] = useState<"phone" | "in_person">("phone");
   const [confirmedSlots, setConfirmedSlots] = useState<Set<string>>(new Set());
   const [ownerBlockedSlots, setOwnerBlockedSlots] = useState<Set<string>>(new Set());
+
+  const tomorrowStr = useMemo(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split("T")[0];
+  }, []);
 
   const timeSlots = useMemo(() => buildTimeSlots(), []);
   const dayMode = useMemo(() => getDayMode(selectedDate), [selectedDate]);
@@ -186,6 +237,7 @@ export default function ConsultRequestPage() {
       cancelled: 2,
       done: 3,
       no_show: 4,
+      rescheduled: 1,
     };
     return [...requests].sort((a, b) => {
       const pa = priority[a.status];
@@ -251,16 +303,47 @@ export default function ConsultRequestPage() {
   }, [confirmedSlots, ownerBlockedSlots, selectedTime]);
 
   useEffect(() => {
-    if (myStudents.length === 0 || !selectedStudentId) return;
+    if (!selectedStudentId) return;
+
+    if (selectedStudentId === "manual") {
+      setStudentName("");
+      setSchoolLevel("");
+      setGrade("");
+      setClassLabel("");
+      setStudentNo("");
+      setEditMode(true);
+      return;
+    }
+
+    if (myStudents.length === 0) return;
     const selected = myStudents.find((student) => student.student_id === selectedStudentId);
     if (!selected) return;
 
     setStudentName(selected.name ?? "");
-    setSchoolLevel((prev) => selected.school_level ?? prev);
-    setGrade((prev) => selected.grade ?? prev);
+    setSchoolLevel((selected.school_level as SchoolLevel | "") || "");
+    setGrade(selected.grade ?? "");
     setClassLabel(selected.class_label ?? "");
     setStudentNo(selected.student_no ?? "");
+    setEditMode(false);
   }, [selectedStudentId, myStudents]);
+
+  const selectedChild = useMemo(
+    () => myStudents.find((s) => s.student_id === selectedStudentId) ?? null,
+    [myStudents, selectedStudentId]
+  );
+
+  const filteredRequests = useMemo(
+    () =>
+      showAllRequests
+        ? requests
+        : requests.filter((r) => IN_PROGRESS_STATUSES.includes(r.status)),
+    [requests, showAllRequests]
+  );
+
+  const inProgressCount = useMemo(
+    () => requests.filter((r) => IN_PROGRESS_STATUSES.includes(r.status)).length,
+    [requests]
+  );
 
   useEffect(() => {
     const prevMap = new Map(prevRequestsRef.current.map((row) => [row.id, row]));
@@ -419,6 +502,13 @@ export default function ConsultRequestPage() {
       return;
     }
 
+    const resolvedStudentId =
+      selectedStudentId === "manual" ? myStudents[0]?.student_id ?? "" : selectedStudentId;
+    if (!resolvedStudentId) {
+      setError("예약할 자녀를 선택해 주세요.");
+      return;
+    }
+
     const trimmedName = studentName.trim();
     const trimmedGuardianContact = guardianContact.trim();
     const trimmedContent = consultationContent.trim();
@@ -453,6 +543,13 @@ export default function ConsultRequestPage() {
       setError("\uB0A0\uC9DC\uC640 \uC2DC\uAC04\uC744 \uC120\uD0DD\uD574 \uC8FC\uC138\uC694.");
       return;
     }
+
+    const todayStr = new Date().toISOString().split("T")[0];
+    if (selectedDate <= todayStr) {
+      setError("당일 예약은 불가합니다. 내일 이후 날짜를 선택해 주세요.");
+      return;
+    }
+
     if (dayMode === "closed") {
       setError("\uD604\uC7AC \uD1A0\uC694\uC77C\uC740 \uC0C1\uB2F4\uC744 \uC6B4\uC601\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.");
       return;
@@ -468,12 +565,12 @@ export default function ConsultRequestPage() {
     try {
       const { error: insertError } = await supabase.from("consultation_requests").insert({
         guardian_id: guardianId,
-        student_id: selectedStudentId,
+        student_id: resolvedStudentId,
         requested_start_at: requestedStartIso,
         duration_min: 30,
         type,
         status: "requested",
-        entry_mode: "manual",
+        entry_mode: "guardian_portal",
         manual_student_name: trimmedName,
         manual_school_level: schoolLevel,
         manual_grade: normalizedGrade,
@@ -589,7 +686,8 @@ export default function ConsultRequestPage() {
                 onChange={(e) => setSelectedStudentId(e.target.value)}
               >
                 {myStudents.map((student) => {
-                  const school = student.school_level === "elem" ? "\uCD08" : student.school_level === "mid" ? "\uC911" : student.school_level === "high" ? "\uACE0" : "\uBBF8\uC785\uB825";
+                  const schoolMap: Record<string, string> = { elementary: "초", middle: "중", high: "고", elem: "초", mid: "중" };
+                  const school = schoolMap[student.school_level ?? ""] ?? "미입력";
                   const gradeText = student.grade != null ? `${student.grade}\uD559\uB144` : "\uBBF8\uC785\uB825";
                   const nameText = student.name?.trim() || "\uC774\uB984\uC5C6\uC74C";
                   const classText = student.class_label?.trim() ? ` (${student.class_label.trim()})` : "";
@@ -599,9 +697,40 @@ export default function ConsultRequestPage() {
                     </option>
                   );
                 })}
+                <option value="manual">{"직접 입력하기"}</option>
               </select>
             </label>
           )}
+
+          {selectedStudentId && selectedStudentId !== "manual" && selectedChild && !editMode && (
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-xl">{"👤"}</span>
+                <p className="text-xs uppercase tracking-wider text-[var(--text-muted)]">
+                  {"선택된 자녀 정보"}
+                </p>
+              </div>
+              <p className="text-base font-bold text-[var(--text)]">
+                {selectedChild.name?.trim() || "이름없음"}
+              </p>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">
+                {schoolLevelKo(selectedChild.school_level)}
+                {selectedChild.grade != null ? ` ${selectedChild.grade}학년` : ""}
+                {selectedChild.class_label?.trim() ? ` · ${selectedChild.class_label.trim()}` : ""}
+                {selectedChild.student_no?.trim() ? ` · 학번 ${selectedChild.student_no.trim()}` : ""}
+              </p>
+              <button
+                type="button"
+                onClick={() => setEditMode(true)}
+                className="mt-2 text-xs text-[var(--accent)] hover:underline"
+              >
+                {"✏️ 정보 직접 수정하기"}
+              </button>
+            </div>
+          )}
+
+          {(selectedStudentId === "manual" || editMode) && (<>
+
 
           <label className="block text-sm text-[var(--muted)]">
             {"\uD559\uC0DD \uC774\uB984 *"}
@@ -620,8 +749,8 @@ export default function ConsultRequestPage() {
               onChange={(e) => setSchoolLevel((e.target.value as SchoolLevel) || "")}
             >
               <option value="">{"\uC120\uD0DD"}</option>
-              <option value="elem">{"\uCD08"}</option>
-              <option value="mid">{"\uC911"}</option>
+              <option value="elementary">{"\uCD08"}</option>
+              <option value="middle">{"\uC911"}</option>
               <option value="high">{"\uACE0"}</option>
             </select>
           </label>
@@ -655,6 +784,17 @@ export default function ConsultRequestPage() {
             />
           </label>
 
+          {selectedStudentId && selectedStudentId !== "manual" && editMode && (
+            <button
+              type="button"
+              onClick={() => setEditMode(false)}
+              className="self-start text-xs text-[var(--muted)] hover:text-[var(--text)] hover:underline"
+            >
+              {"수정 취소 (자녀 기본 정보 사용)"}
+            </button>
+          )}
+          </>)}
+
           <label className="block text-sm text-[var(--muted)]">
             {"\uBCF4\uD638\uC790 \uC5F0\uB77D\uCC98 *"}
             <input
@@ -674,17 +814,26 @@ export default function ConsultRequestPage() {
           </label>
 
           <div>
-            <label className="mb-2 block text-sm text-[var(--muted)]">{"\uB0A0\uC9DC *"}</label>
+            <label className="mb-2 block text-sm text-[var(--text-muted)]">
+              날짜 *
+            </label>
             <input
               type="date"
-              className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              className="w-full cursor-pointer rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[var(--text)] outline-none focus:ring-2 focus:ring-[var(--accent)] [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-60 [&::-webkit-calendar-picker-indicator]:hover:opacity-100 [&::-webkit-calendar-picker-indicator]:dark:invert"
               value={selectedDate}
+              min={tomorrowStr}
               onChange={(e) => setSelectedDate(e.target.value)}
+              onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
             />
-            {dayHint && <p className="mt-2 text-xs text-[var(--muted)]">{dayHint}</p>}
+            <p className="mt-2 text-xs text-[var(--text-muted)]">
+              오늘 포함 당일 예약은 불가하며, 내일부터 예약 가능합니다.
+            </p>
+            {dayHint && (
+              <p className="mt-1 text-xs text-[var(--accent)]">{dayHint}</p>
+            )}
             {dayMode === "closed" && (
-              <p className="mt-2 text-xs text-[var(--muted)]">
-                {"\uD604\uC7AC \uD1A0\uC694\uC77C\uC740 \uC0C1\uB2F4\uC744 \uC6B4\uC601\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."}
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                토요일은 상담을 운영하지 않습니다.
               </p>
             )}
           </div>
@@ -704,9 +853,25 @@ export default function ConsultRequestPage() {
 
           <div>
             <label className="mb-2 block text-sm text-[var(--muted)]">{"\uC2DC\uAC04 *"}</label>
-            {!showGrid ? (
-              <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-3 text-sm text-[var(--muted)]">
-                {"\uC120\uD0DD \uAC00\uB2A5\uD55C \uC2DC\uAC04\uB300\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4."}
+            {!selectedDate ? (
+              <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--card)] p-6 text-center">
+                <div className="mb-2 text-2xl">{"📅"}</div>
+                <p className="text-sm font-medium text-[var(--text)]">
+                  {"먼저 날짜를 선택해 주세요"}
+                </p>
+                <p className="mt-1 text-xs text-[var(--text-muted)]">
+                  {"날짜를 고르면 예약 가능한 시간대가 표시됩니다"}
+                </p>
+              </div>
+            ) : !showGrid ? (
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-6 text-center">
+                <div className="mb-2 text-2xl">{"😔"}</div>
+                <p className="text-sm font-medium text-[var(--text)]">
+                  {"이 날짜에는 예약 가능한 시간대가 없어요"}
+                </p>
+                <p className="mt-1 text-xs text-[var(--text-muted)]">
+                  {"다른 날짜를 선택하거나 원장님께 문의해 주세요"}
+                </p>
               </div>
             ) : (
               <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
@@ -751,60 +916,92 @@ export default function ConsultRequestPage() {
           </button>
         </div>
 
-        <h2 className="mt-8 text-lg font-semibold text-[var(--text)]">{"\uB0B4 \uC694\uCCAD"}</h2>
-        <div className="mt-3 space-y-3">
-          {requests.length === 0 ? (
-            <SectionCard className="p-4 text-sm text-[var(--muted)] shadow-none">
-              {"\uC694\uCCAD \uB0B4\uC5ED\uC774 \uC5C6\uC2B5\uB2C8\uB2E4."}
-            </SectionCard>
+        <section className="mt-8">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-bold text-[var(--text)]">{"내 요청"}</h3>
+              <p className="text-xs text-[var(--text-muted)]">
+                {showAllRequests
+                  ? `전체 ${requests.length}건`
+                  : `진행 중 ${inProgressCount}건 / 전체 ${requests.length}건`}
+              </p>
+            </div>
+            {requests.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowAllRequests((prev) => !prev)}
+                className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-xs font-medium text-[var(--text)] transition hover:border-[var(--accent)]"
+              >
+                {showAllRequests ? "진행 중만 보기" : `전체 보기 (${requests.length})`}
+              </button>
+            )}
+          </div>
+
+          {filteredRequests.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-[var(--border)] bg-[var(--card)] p-6 text-center">
+              <p className="text-sm text-[var(--text-muted)]">
+                {showAllRequests
+                  ? "아직 요청한 상담이 없어요"
+                  : "진행 중인 상담 요청이 없어요"}
+              </p>
+            </div>
           ) : (
-            requests.map((row) => {
-              const tone = getStatusTone(row.status);
-              const preview = row.manual_consultation_content?.trim() || row.notes || "-";
-              const dimmed =
-                row.status === "canceled" ||
-                row.status === "cancelled" ||
-                row.status === "done" ||
-                row.status === "no_show";
-              const cancelDisabled =
-                row.status !== "requested" ||
-                cancelingRequestId === row.id;
-              return (
-                <SectionCard
-                  key={row.id}
-                  className={`p-4 ${
-                    highlightRequestId === row.id ? "border-[var(--accent)] ring-1 ring-[var(--accent)]" : tone.cardClass
-                  } ${dimmed ? "opacity-80" : ""}`}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-sm text-[var(--text)]">
-                      {fmtKst(row.requested_start_at)} / {getTypeLabel(row.type)}
+            <div className="space-y-2">
+              {filteredRequests.map((row) => {
+                const tone = getStatusTone(row.status);
+                const badge = STATUS_BADGE_MAP[row.status] ?? {
+                  label: getStatusLabel(row.status),
+                  cls: "border-[var(--border)] bg-[var(--card)] text-[var(--muted)]",
+                };
+                const preview = row.manual_consultation_content?.trim() || row.notes || "-";
+                const cancelDisabled =
+                  row.status !== "requested" || cancelingRequestId === row.id;
+                return (
+                  <SectionCard
+                    key={row.id}
+                    className={`p-4 ${
+                      highlightRequestId === row.id
+                        ? "border-[var(--accent)] ring-1 ring-[var(--accent)]"
+                        : tone.cardClass
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-sm text-[var(--text)]">
+                        {fmtKst(row.requested_start_at)} / {getTypeLabel(row.type)}
+                      </div>
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-xs font-medium ${badge.cls}`}
+                      >
+                        {badge.label}
+                      </span>
                     </div>
-                    <Badge variant={getStatusBadgeVariant(row.status)}>{getStatusLabel(row.status)}</Badge>
-                  </div>
-                  <p
-                    className="mt-2 text-sm text-[var(--muted)] overflow-hidden"
-                    style={{
-                      display: "-webkit-box",
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: "vertical",
-                    }}
-                  >
-                    {preview}
-                  </p>
-                  <button
-                    type="button"
-                    className="mt-3 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-60"
-                    onClick={() => void cancelMyRequest(row.id)}
-                    disabled={cancelDisabled}
-                  >
-                    {cancelingRequestId === row.id ? "\uCDE8\uC18C \uCC98\uB9AC \uC911..." : "\uCDE8\uC18C"}
-                  </button>
-                </SectionCard>
-              );
-            })
+                    <p
+                      className="mt-2 text-sm text-[var(--muted)] overflow-hidden"
+                      style={{
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                      }}
+                    >
+                      {preview}
+                    </p>
+                    {row.status === "requested" && (
+                      <button
+                        type="button"
+                        className="mt-3 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-60"
+                        onClick={() => void cancelMyRequest(row.id)}
+                        disabled={cancelDisabled}
+                      >
+                        {cancelingRequestId === row.id ? "취소 처리 중..." : "취소"}
+                      </button>
+                    )}
+                  </SectionCard>
+                );
+              })}
+            </div>
           )}
-        </div>
+        </section>
+
       </SectionCard>
     </PageShell>
   );

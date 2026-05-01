@@ -1,99 +1,196 @@
-﻿"use client";
+"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import PageShell from "@/components/ui/PageShell";
-import SectionCard from "@/components/ui/SectionCard";
 import { supabase } from "@/lib/supabaseClient";
-import { toPrettyErrorString } from "@/lib/supabaseError";
-import { isUuid } from "@/lib/validators";
 
-type StudentStatus = "active" | "pending" | "blocked" | "withdrawn";
-type StatusFilter = "all" | StudentStatus;
+type ArchiveProfileRpcResult = {
+  ok: boolean;
+  reason?: string | null;
+};
+
+type PageState = "loading" | "ready";
+type SchoolLevel = "elem" | "mid" | "high";
 
 type StudentRow = {
   id: string;
-  academy_id: string | null;
   email: string | null;
   name: string | null;
-  school_level: string | null;
+  school_level: SchoolLevel | null;
   grade: number | null;
   class_label: string | null;
   student_no: string | null;
-  account_status: StudentStatus | null;
-  created_at: string;
 };
 
-type PendingStudentRow = {
-  id: string;
-  name: string | null;
-  email: string | null;
-  school_level: string | null;
-  grade: number | null;
-  class_label: string | null;
-  created_at: string;
+const schoolLevelLabel: Record<SchoolLevel, string> = {
+  elem: "\uCD08",
+  mid: "\uC911",
+  high: "\uACE0",
 };
 
-function levelLabel(level: string | null): string {
-  if (level === "elem") return "초";
-  if (level === "mid") return "중";
-  if (level === "high") return "고";
-  return "-";
+function getSchoolLevelLabel(level: SchoolLevel | null): string {
+  if (!level) return "\uBBF8\uC785\uB825";
+  return schoolLevelLabel[level];
 }
 
-function formatDate(value: string): string {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString("ko-KR");
+function getGradeOptions(level: SchoolLevel | ""): number[] {
+  if (level === "elem") return [1, 2, 3, 4, 5, 6];
+  if (level === "mid" || level === "high") return [1, 2, 3];
+  return [];
 }
 
-function statusBadgeClass(status: StudentStatus): string {
-  if (status === "pending") return "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]";
-  if (status === "blocked") return "border-[var(--danger-text)] bg-[var(--danger-bg)] text-[var(--danger-text)]";
-  if (status === "withdrawn") return "border-[var(--text-muted)] bg-[var(--card-soft)] text-[var(--text-muted)]";
-  return "border-[var(--success-text)] bg-[var(--success-bg)] text-[var(--success-text)]";
-}
+function formatStudentLabel(row: StudentRow): string {
+  const level = getSchoolLevelLabel(row.school_level);
+  const grade = row.grade != null ? `${row.grade}\uD559\uB144` : "";
+  const name = row.name?.trim() || "\uC774\uB984\uC5C6\uC74C";
+  const classText = row.class_label?.trim() ? ` (${row.class_label.trim()})` : "";
 
-function statusLabel(status: StudentStatus): string {
-  if (status === "pending") return "승인대기";
-  if (status === "blocked") return "차단";
-  if (status === "withdrawn") return "탈퇴";
-  return "활성";
+  return [level, grade, name].filter(Boolean).join(" ") + classText;
 }
 
 export default function OwnerStudentsPage() {
   const router = useRouter();
   const isDevMode = useMemo(() => process.env.NEXT_PUBLIC_DEV_MODE === "true", []);
 
-  const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-
-  const [ownerAcademyId, setOwnerAcademyId] = useState<string | null>(null);
+  const [pageState, setPageState] = useState<PageState>("loading");
+  const [pageError, setPageError] = useState<string | null>(null);
 
   const [students, setStudents] = useState<StudentRow[]>([]);
-  const [pendingStudents, setPendingStudents] = useState<PendingStudentRow[]>([]);
   const [keyword, setKeyword] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+
+  const [name, setName] = useState("");
+  const [schoolLevel, setSchoolLevel] = useState<SchoolLevel | "">("");
+  const [grade, setGrade] = useState<number | "">("");
+  const [classLabel, setClassLabel] = useState("");
+  const [studentNo, setStudentNo] = useState("");
+
+  const [saving, setSaving] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  const [archiveTargetId, setArchiveTargetId] = useState<string | null>(null);
+  const [archiveReason, setArchiveReason] = useState("");
+  const [archiving, setArchiving] = useState(false);
+
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryResult, setRecoveryResult] = useState<{ email: string; name: string | null; actionLink: string } | null>(null);
+  const [recoveryCopied, setRecoveryCopied] = useState(false);
 
   useEffect(() => {
     void initialize();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const initialize = async () => {
-    setError(null);
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
-    if (sessionError) {
-      setError(toPrettyErrorString(sessionError));
-      setLoading(false);
+  const filteredStudents = useMemo(() => {
+    const q = keyword.trim().toLowerCase();
+    if (!q) return students;
+
+    return students.filter((row) => {
+      const fields = [
+        row.name ?? "",
+        row.email ?? "",
+        row.class_label ?? "",
+        row.student_no ?? "",
+        getSchoolLevelLabel(row.school_level),
+        row.school_level ?? "",
+        row.grade != null ? String(row.grade) : "",
+        row.grade != null ? `${row.grade}\uD559\uB144` : "",
+      ];
+      return fields.some((value) => value.toLowerCase().includes(q));
+    });
+  }, [keyword, students]);
+
+  useEffect(() => {
+    if (!selectedStudentId) return;
+    const exists = students.some((row) => row.id === selectedStudentId);
+    if (!exists) {
+      clearSelectionForm();
+    }
+  }, [students, selectedStudentId]);
+
+  const selectedStudent = useMemo(
+    () => students.find((row) => row.id === selectedStudentId) ?? null,
+    [students, selectedStudentId]
+  );
+
+  const gradeOptions = useMemo(() => getGradeOptions(schoolLevel), [schoolLevel]);
+
+  const clearSelectionForm = () => {
+    setSelectedStudentId(null);
+    setName("");
+    setSchoolLevel("");
+    setGrade("");
+    setClassLabel("");
+    setStudentNo("");
+  };
+
+  const applyForm = (row: StudentRow) => {
+    setSelectedStudentId(row.id);
+    setName(row.name ?? "");
+    setSchoolLevel(row.school_level ?? "");
+    setGrade(typeof row.grade === "number" ? row.grade : "");
+    setClassLabel(row.class_label ?? "");
+    setStudentNo(row.student_no ?? "");
+    setActionError(null);
+    setActionSuccess(null);
+  };
+
+  const fetchStudents = async (): Promise<StudentRow[] | null> => {
+    const query = supabase
+      .from("profiles")
+      .select("id, email, name, school_level, grade, class_label, student_no")
+      .eq("role", "student");
+
+    const { data, error } = await query
+      .order("school_level", { ascending: true, nullsFirst: false })
+      .order("grade", { ascending: true, nullsFirst: false })
+      .order("name", { ascending: true, nullsFirst: false })
+      .order("email", { ascending: true })
+      .range(0, 499);
+
+    if (error) {
+      setPageError(`\uD559\uC0DD \uBAA9\uB85D \uC870\uD68C \uC2E4\uD328: ${error.message}`);
+      return null;
+    }
+
+    const rows = (data ?? []) as StudentRow[];
+    setStudents(rows);
+    return rows;
+  };
+
+  const refreshStudents = async () => {
+    const rows = await fetchStudents();
+    if (!rows) return;
+
+    if (rows.length === 0) {
+      clearSelectionForm();
       return;
     }
+
+    if (!selectedStudentId) return;
+
+    const selected = rows.find((row) => row.id === selectedStudentId);
+    if (selected) {
+      applyForm(selected);
+      return;
+    }
+
+    clearSelectionForm();
+  };
+
+  const initialize = async () => {
+    setPageError(null);
+
+    const { data, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) {
+      setPageError(`\uC138\uC158 \uD655\uC778 \uC2E4\uD328: ${sessionError.message}`);
+      setPageState("ready");
+      return;
+    }
+
+    const session = data.session;
     if (!session) {
       router.replace(isDevMode ? "/dev-login" : "/login");
       return;
@@ -101,324 +198,463 @@ export default function OwnerStudentsPage() {
 
     const { data: me, error: meError } = await supabase
       .from("profiles")
-      .select("role, account_status, academy_id")
+      .select("role")
       .eq("id", session.user.id)
-      .maybeSingle<{ role: string | null; account_status: string | null; academy_id: string | null }>();
+      .single<{ role: string }>();
+
     if (meError) {
-      setError(toPrettyErrorString(meError));
-      setLoading(false);
+      setPageError(`\uAD8C\uD55C \uD655\uC778 \uC2E4\uD328: ${meError.message}`);
+      setPageState("ready");
       return;
     }
-    if (me?.role !== "owner") {
+
+    if (me.role !== "owner" && me.role !== "teacher") {
       router.replace("/");
       return;
     }
-    if ((me?.account_status ?? "active") !== "active") {
-      router.replace("/login");
+
+    const rows = await fetchStudents();
+    if (!rows) {
+      setPageState("ready");
       return;
     }
 
-    setOwnerAcademyId(isUuid(me?.academy_id) ? me.academy_id : null);
+    if (rows.length > 0) {
+      applyForm(rows[0]);
+    }
 
-    await refreshLists();
-    setLoading(false);
+    setPageState("ready");
   };
 
-  const refreshLists = async () => {
-    const [studentsRes, pendingRes] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("id,academy_id,email,name,school_level,grade,class_label,student_no,account_status,created_at")
-        .eq("role", "student")
-        .order("created_at", { ascending: false })
-        .returns<StudentRow[]>(),
-      supabase
-        .from("profiles")
-        .select("id,name,email,school_level,grade,class_label,created_at")
-        .eq("role", "student")
-        .eq("account_status", "pending")
-        .order("created_at", { ascending: false })
-        .returns<PendingStudentRow[]>(),
-    ]);
+  const archiveTarget = useMemo(
+    () => (archiveTargetId ? students.find((row) => row.id === archiveTargetId) ?? null : null),
+    [students, archiveTargetId]
+  );
 
-    if (studentsRes.error) {
-      console.error("Owner students load failed:", toPrettyErrorString(studentsRes.error), studentsRes.error);
-      setError(toPrettyErrorString(studentsRes.error));
-      return;
-    }
-    if (pendingRes.error) {
-      console.error("Owner pending students load failed:", toPrettyErrorString(pendingRes.error), pendingRes.error);
-      setError(toPrettyErrorString(pendingRes.error));
-      return;
-    }
-
-    setStudents(Array.isArray(studentsRes.data) ? studentsRes.data : []);
-    setPendingStudents(Array.isArray(pendingRes.data) ? pendingRes.data : []);
+  const openArchiveModal = (studentId: string) => {
+    setArchiveTargetId(studentId);
+    setArchiveReason("");
+    setActionError(null);
+    setActionSuccess(null);
   };
 
-  const updateStatus = async (studentId: string, status: StudentStatus) => {
-    setError(null);
-    setSuccess(null);
-    setBusyId(studentId);
+  const closeArchiveModal = () => {
+    if (archiving) return;
+    setArchiveTargetId(null);
+    setArchiveReason("");
+  };
+
+  const submitArchive = async () => {
+    if (!archiveTargetId) return;
+    const reason = archiveReason.trim();
+    if (!reason) {
+      setActionError("탈퇴 사유를 입력해 주세요.");
+      return;
+    }
+    setActionError(null);
+    setActionSuccess(null);
+    setArchiving(true);
     try {
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update({ account_status: status })
-        .eq("id", studentId)
-        .eq("role", "student");
-      if (updateError) throw updateError;
-      await refreshLists();
-      setSuccess(`상태를 ${statusLabel(status)}로 변경했습니다.`);
+      const { data, error: rpcError } = await supabase
+        .rpc("archive_profile", { p_user_id: archiveTargetId, p_reason: reason })
+        .single<ArchiveProfileRpcResult>();
+      if (rpcError) throw rpcError;
+      if (data?.ok) {
+        setActionSuccess("처리 완료");
+        setArchiveTargetId(null);
+        setArchiveReason("");
+        if (selectedStudentId === archiveTargetId) clearSelectionForm();
+        await refreshStudents();
+        return;
+      }
+      const code = data?.reason ?? "UNKNOWN";
+      if (code === "CANNOT_ARCHIVE_SELF") setActionError("본인은 처리할 수 없어요.");
+      else if (code === "CANNOT_ARCHIVE_OWNER") setActionError("원장은 처리할 수 없어요.");
+      else setActionError(`처리하지 못했어요 (${code}).`);
     } catch (e: unknown) {
-      console.error("Owner student status update failed:", toPrettyErrorString(e), e);
-      setError(toPrettyErrorString(e));
+      const message = e instanceof Error ? e.message : "Unknown error";
+      console.error("archive_profile failed:", message, e);
+      setActionError(`처리 실패: ${message}`);
     } finally {
-      setBusyId(null);
+      setArchiving(false);
     }
   };
 
-  const linkStudentToAcademy = async (studentId: string) => {
-    if (!isUuid(ownerAcademyId)) {
-      setError("학원 소속 정보가 없습니다. 먼저 학원 설정을 완료해 주세요.");
+  const sendRecoveryLink = async (studentId: string) => {
+    setActionError(null);
+    setActionSuccess(null);
+    setRecoveryBusy(true);
+    setRecoveryCopied(false);
+    try {
+      const res = await fetch("/api/owner/students/recovery-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        actionLink?: string;
+        email?: string;
+        name?: string | null;
+        error?: string;
+      };
+      if (!res.ok || !payload.ok || !payload.actionLink || !payload.email) {
+        setActionError(payload.error ?? "재설정 링크 생성에 실패했어요.");
+        return;
+      }
+      setRecoveryResult({
+        email: payload.email,
+        name: payload.name ?? null,
+        actionLink: payload.actionLink,
+      });
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "재설정 링크 생성에 실패했어요.";
+      setActionError(message);
+    } finally {
+      setRecoveryBusy(false);
+    }
+  };
+
+  const closeRecoveryModal = () => {
+    setRecoveryResult(null);
+    setRecoveryCopied(false);
+  };
+
+  const copyRecoveryLink = async () => {
+    if (!recoveryResult) return;
+    try {
+      await navigator.clipboard.writeText(recoveryResult.actionLink);
+      setRecoveryCopied(true);
+    } catch {
+      setRecoveryCopied(false);
+    }
+  };
+
+  const handleSchoolLevelChange = (value: SchoolLevel | "") => {
+    setSchoolLevel(value);
+
+    const nextOptions = getGradeOptions(value);
+    if (!nextOptions.includes(Number(grade))) {
+      setGrade("");
+    }
+  };
+
+  const handleSave = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setActionError(null);
+    setActionSuccess(null);
+
+    if (!selectedStudentId) {
+      setActionError("\uC218\uC815\uD560 \uD559\uC0DD\uC744 \uC120\uD0DD\uD574 \uC8FC\uC138\uC694.");
       return;
     }
-    if (!window.confirm("선택한 학생을 현재 원장님의 학원 소속으로 연결할까요?")) return;
 
-    setError(null);
-    setSuccess(null);
-    setBusyId(studentId);
-    try {
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update({ academy_id: ownerAcademyId })
-        .eq("id", studentId)
-        .eq("role", "student")
-        .is("academy_id", null);
-      if (updateError) throw updateError;
+    const trimmedName = name.trim();
+    const trimmedClassLabel = classLabel.trim();
+    const trimmedStudentNo = studentNo.trim();
 
-      setStudents((prev) => prev.map((row) => (row.id === studentId ? { ...row, academy_id: ownerAcademyId } : row)));
-      setSuccess("학생 학원 소속을 연결했습니다.");
-    } catch (e: unknown) {
-      console.error("Owner student academy link failed:", toPrettyErrorString(e), e);
-      setError(toPrettyErrorString(e));
-    } finally {
-      setBusyId(null);
+    if (!trimmedName) {
+      setActionError("\uC774\uB984\uC740 \uD544\uC218\uC785\uB2C8\uB2E4.");
+      return;
     }
+
+    const validGradeOptions = getGradeOptions(schoolLevel);
+    const normalizedGrade = validGradeOptions.includes(Number(grade)) ? Number(grade) : null;
+
+    setSaving(true);
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        name: trimmedName,
+        school_level: schoolLevel || null,
+        grade: normalizedGrade,
+        class_label: trimmedClassLabel || null,
+        student_no: trimmedStudentNo || null,
+      })
+      .eq("id", selectedStudentId);
+
+    if (error) {
+      setActionError(`\uC800\uC7A5 \uC2E4\uD328: ${error.message}`);
+      setSaving(false);
+      return;
+    }
+
+    await refreshStudents();
+
+    setActionSuccess("\uC800\uC7A5\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
+    setSaving(false);
   };
 
-  const filteredStudents = useMemo(() => {
-    const q = keyword.trim().toLowerCase();
-    return students.filter((row) => {
-      const status = (row.account_status ?? "active") as StudentStatus;
-      if (statusFilter !== "all" && status !== statusFilter) return false;
-      if (!q) return true;
-      const haystack = [
-        row.name ?? "",
-        row.email ?? "",
-        row.school_level ?? "",
-        row.grade != null ? String(row.grade) : "",
-        row.class_label ?? "",
-        row.student_no ?? "",
-      ].join(" ").toLowerCase();
-      return haystack.includes(q);
-    });
-  }, [students, statusFilter, keyword]);
-
-  if (loading) {
-    return <PageShell maxWidthClassName="max-w-6xl">로딩 중...</PageShell>;
+  if (pageState === "loading") {
+    return (
+      <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] flex items-center justify-center">
+        {"\uB85C\uB529 \uC911..."}
+      </main>
+    );
   }
 
   return (
-    <PageShell title="학생 관리" subtitle="승인대기 확인 및 학생 계정 상태를 관리합니다." maxWidthClassName="max-w-6xl">
-      <SectionCard>
-        {error && (
-          <div className="mb-4 rounded-xl border border-[var(--danger-text)] bg-[var(--danger-bg)] p-3 text-sm text-[var(--danger-text)]">
-            {error}
-          </div>
-        )}
-        {success && (
-          <div className="mb-4 rounded-xl border border-[var(--success-text)] bg-[var(--success-bg)] p-3 text-sm text-[var(--success-text)]">
-            {success}
-          </div>
-        )}
+    <main className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6">
+      <div className="mx-auto w-full max-w-6xl rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
+        <h1 className="text-2xl font-semibold">
+          <span className="text-[var(--accent)]">MVS</span> {"\uD559\uC0DD \uAD00\uB9AC"}
+        </h1>
+        <Link
+          href="/owner/archived"
+          className="mt-3 inline-block rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--text)] hover:border-[var(--accent)]"
+        >
+          {"📦 아카이브 조회"}
+        </Link>
+        <p className="mt-2 text-sm text-[var(--text-muted)]">{"\uD559\uC0DD \uAE30\uBCF8 \uC815\uBCF4\uB97C \uAC80\uC0C9\uD558\uACE0 \uC218\uC815\uD569\uB2C8\uB2E4."}</p>
 
-        {!isUuid(ownerAcademyId) && (
-          <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] p-3 text-sm text-[var(--accent)]">
-            <div>학원 소속 정보가 없어 학생 연결을 진행할 수 없습니다.</div>
-            <Link href="/onboarding/academy" className="rounded-lg border border-[var(--accent)] px-2 py-1 text-xs font-semibold">
-              학원 설정으로 이동
-            </Link>
-          </div>
+        {pageError && (
+          <div className="mt-4 rounded-xl border border-[var(--danger-text)] bg-[var(--danger-bg)] p-3 text-sm text-[var(--danger-text)]">{pageError}</div>
         )}
 
-        <div className="mb-4 rounded-xl border border-[var(--border)] bg-[var(--card-soft)] p-4">
-          <div className="text-sm text-[var(--text-muted)]">승인대기</div>
-          <div className="mt-1 text-2xl font-semibold text-[var(--text)]">{pendingStudents.length}명</div>
-        </div>
-
-        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 md:p-5">
-          <h2 className="text-lg font-semibold text-[var(--text)]">승인 대기 목록</h2>
-          {pendingStudents.length === 0 ? (
-            <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--card-soft)] p-3 text-sm text-[var(--text-muted)]">
-              승인 대기 학생이 없습니다.
-            </div>
-          ) : (
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-              {pendingStudents.map((row) => (
-                <div key={row.id} className="rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] p-4">
-                  <div className="flex flex-col gap-1">
-                    <div className="text-sm font-semibold text-[var(--text)]">{row.name?.trim() || row.id.slice(0, 8)}</div>
-                    <div className="text-xs text-[var(--text-muted)]">{row.email ?? "-"}</div>
-                    <div className="text-xs text-[var(--text-muted)]">{`${levelLabel(row.school_level)} ${row.grade ?? "-"} / ${row.class_label?.trim() || "-"}`}</div>
-                    <div className="text-xs text-[var(--text-muted)]">가입: {formatDate(row.created_at)}</div>
-                  </div>
-                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                    <button
-                      type="button"
-                      className="w-full rounded-lg border border-[var(--success-text)] bg-[var(--success-bg)] px-3 py-2 text-xs text-[var(--success-text)] disabled:opacity-60 sm:w-auto"
-                      onClick={() => void updateStatus(row.id, "active")}
-                      disabled={busyId === row.id}
-                    >
-                      승인
-                    </button>
-                    <button
-                      type="button"
-                      className="w-full rounded-lg border border-[var(--danger-text)] bg-[var(--danger-bg)] px-3 py-2 text-xs text-[var(--danger-text)] disabled:opacity-60 sm:w-auto"
-                      onClick={() => void updateStatus(row.id, "blocked")}
-                      disabled={busyId === row.id}
-                    >
-                      차단
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="mt-5 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 md:p-5">
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+        <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-[360px_1fr]">
+          <section className="relative z-0 rounded-xl border border-[var(--border)] bg-[var(--bg)] p-4">
+            <label className="block text-sm text-[var(--text-muted)]" htmlFor="student-search">
+              {"\uAC80\uC0C9"}
+            </label>
             <input
+              id="student-search"
               type="text"
-              className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
-              placeholder="이름/이메일/학년/반 검색"
+              className="pointer-events-auto mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
+              placeholder={"\uC774\uB984/\uC774\uBA54\uC77C/\uD559\uAD50\uAE09/\uD559\uB144/\uBC18/\uD559\uBC88"}
+              autoComplete="off"
             />
-            <select
-              className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-            >
-              <option value="all">전체</option>
-              <option value="active">active</option>
-              <option value="pending">pending</option>
-              <option value="blocked">blocked</option>
-              <option value="withdrawn">withdrawn</option>
-            </select>
-          </div>
+            <p className="mt-2 text-xs text-[var(--text-muted)]">
+              {"\uD45C\uC2DC: "}
+              {filteredStudents.length}
+              {" / \uC804\uCCB4: "}
+              {students.length}
+            </p>
+            <div className="mt-3 max-h-[55vh] space-y-2 overflow-auto pr-1">
+              {filteredStudents.length === 0 ? (
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-3 text-sm text-[var(--text-muted)]">
+                  {"\uAC80\uC0C9 \uACB0\uACFC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4."}
+                </div>
+              ) : (
+                filteredStudents.map((row) => {
+                  const selected = row.id === selectedStudentId;
 
-          <div className="mt-2 text-xs text-[var(--text-muted)]">표시: {filteredStudents.length} / 전체: {students.length}</div>
+                  return (
+                    <button
+                      key={row.id}
+                      type="button"
+                      onClick={() => applyForm(row)}
+                      className={`w-full rounded-xl border p-3 text-left transition ${
+                        selected
+                          ? "border-[var(--accent)] bg-[var(--accent-soft)]"
+                          : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--accent)]"
+                      }`}
+                    >
+                      <div className="text-sm font-medium text-[var(--text)]">{formatStudentLabel(row)}</div>
+                      <div className="mt-1 text-xs text-[var(--text-muted)]">{row.email || "\uC774\uBA54\uC77C \uC5C6\uC74C"}</div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </section>
 
-          <div className="mt-3 space-y-2">
-            {filteredStudents.length === 0 ? (
-              <div className="rounded-lg border border-[var(--border)] bg-[var(--card-soft)] p-3 text-sm text-[var(--text-muted)]">
-                조건에 맞는 학생이 없습니다.
+          <section className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-4">
+            {!selectedStudent ? (
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 text-sm text-[var(--text-muted)]">
+                {"\uD559\uC0DD\uC744 \uC120\uD0DD\uD574 \uC8FC\uC138\uC694."}
               </div>
             ) : (
-              filteredStudents.map((row) => {
-                const status = (row.account_status ?? "active") as StudentStatus;
-                return (
-                  <div key={row.id} className="rounded-xl border border-[var(--border)] bg-[var(--card-soft)] p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <div className="text-sm font-semibold text-[var(--text)]">{row.name?.trim() || row.id.slice(0, 8)}</div>
-                        <div className="text-xs text-[var(--text-muted)]">{row.email ?? "-"}</div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {row.academy_id ? (
-                          <span className="inline-flex rounded-full border border-[var(--success-text)] bg-[var(--success-bg)] px-2 py-0.5 text-xs text-[var(--success-text)]">
-                            소속 설정됨
-                          </span>
-                        ) : (
-                          <span className="inline-flex rounded-full border border-[var(--danger-text)] bg-[var(--danger-bg)] px-2 py-0.5 text-xs text-[var(--danger-text)]">
-                            소속 미설정
-                          </span>
-                        )}
-                        <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs ${statusBadgeClass(status)}`}>
-                          {statusLabel(status)}
-                        </span>
-                      </div>
-                    </div>
+              <form className="space-y-4" onSubmit={(e) => void handleSave(e)}>
+                <h2 className="text-lg font-semibold text-[var(--text)]">{"\uD559\uC0DD \uC815\uBCF4 \uC218\uC815"}</h2>
 
-                    <div className="mt-2 text-xs text-[var(--text-muted)]">
-                      {`${levelLabel(row.school_level)} ${row.grade ?? "-"}학년 ${row.class_label?.trim() || "-"}반`}
-                      {row.student_no?.trim() ? ` / 학번 ${row.student_no.trim()}` : ""}
-                    </div>
-                    <div className="mt-1 text-xs text-[var(--text-muted)]">가입: {formatDate(row.created_at)}</div>
+                {actionError && (
+                  <div className="rounded-xl border border-[var(--danger-text)] bg-[var(--danger-bg)] p-3 text-sm text-[var(--danger-text)]">{actionError}</div>
+                )}
 
-                    <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                      {!row.academy_id && (
-                        <button
-                          type="button"
-                          className="w-full rounded-lg border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-xs text-[var(--accent)] disabled:opacity-60 sm:w-auto"
-                          onClick={() => void linkStudentToAcademy(row.id)}
-                          disabled={busyId === row.id || !isUuid(ownerAcademyId)}
-                        >
-                          {busyId === row.id ? "처리 중..." : "학원 소속 연결"}
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="w-full rounded-lg border border-[var(--success-text)] bg-[var(--success-bg)] px-3 py-2 text-xs text-[var(--success-text)] disabled:opacity-60 sm:w-auto"
-                        onClick={() => void updateStatus(row.id, "active")}
-                        disabled={busyId === row.id}
-                      >
-                        승인
-                      </button>
-                      <button
-                        type="button"
-                        className="w-full rounded-lg border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-xs text-[var(--accent)] disabled:opacity-60 sm:w-auto"
-                        onClick={() => void updateStatus(row.id, "pending")}
-                        disabled={busyId === row.id}
-                      >
-                        대기
-                      </button>
-                      <button
-                        type="button"
-                        className="w-full rounded-lg border border-[var(--danger-text)] bg-[var(--danger-bg)] px-3 py-2 text-xs text-[var(--danger-text)] disabled:opacity-60 sm:w-auto"
-                        onClick={() => void updateStatus(row.id, "blocked")}
-                        disabled={busyId === row.id}
-                      >
-                        차단
-                      </button>
-                      {status !== "withdrawn" ? (
-                        <button
-                          type="button"
-                          className="w-full rounded-lg border border-[var(--text-muted)] bg-[var(--card)] px-3 py-2 text-xs text-[var(--text-muted)] disabled:opacity-60 sm:w-auto"
-                          onClick={() => void updateStatus(row.id, "withdrawn")}
-                          disabled={busyId === row.id}
-                        >
-                          탈퇴 처리
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="w-full rounded-lg border border-[var(--success-text)] bg-[var(--success-bg)] px-3 py-2 text-xs text-[var(--success-text)] disabled:opacity-60 sm:w-auto"
-                          onClick={() => void updateStatus(row.id, "active")}
-                          disabled={busyId === row.id}
-                        >
-                          복구
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
+                {actionSuccess && (
+                  <div className="rounded-xl border border-[var(--success-text)] bg-[var(--success-bg)] p-3 text-sm text-[var(--success-text)]">{actionSuccess}</div>
+                )}
+
+                <label className="block space-y-2">
+                  <span className="text-sm text-[var(--text-muted)]">{"\uC774\uB984 *"}</span>
+                  <input
+                    className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                  />
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-sm text-[var(--text-muted)]">{"\uD559\uAD50\uAE09"}</span>
+                  <select
+                    className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                    value={schoolLevel}
+                    onChange={(e) => handleSchoolLevelChange((e.target.value as SchoolLevel) || "")}
+                  >
+                    <option value="">{"\uC120\uD0DD \uC548 \uD568"}</option>
+                    <option value="elem">{"\uCD08"}</option>
+                    <option value="mid">{"\uC911"}</option>
+                    <option value="high">{"\uACE0"}</option>
+                  </select>
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-sm text-[var(--text-muted)]">{"\uD559\uB144"}</span>
+                  <select
+                    className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)] disabled:opacity-60"
+                    value={grade}
+                    onChange={(e) => setGrade(e.target.value ? Number(e.target.value) : "")}
+                    disabled={!schoolLevel}
+                  >
+                    <option value="">{"\uC120\uD0DD \uC548 \uD568"}</option>
+                    {gradeOptions.map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-sm text-[var(--text-muted)]">{"\uBC18 (\uC120\uD0DD)"}</span>
+                  <input
+                    className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                    value={classLabel}
+                    onChange={(e) => setClassLabel(e.target.value)}
+                    placeholder={"\uC608: A\uBC18"}
+                  />
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-sm text-[var(--text-muted)]">{"\uD559\uBC88 (\uC120\uD0DD)"}</span>
+                  <input
+                    className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                    value={studentNo}
+                    onChange={(e) => setStudentNo(e.target.value)}
+                    placeholder={"\uD559\uC0DD \uBC88\uD638"}
+                  />
+                </label>
+
+                <button
+                  type="submit"
+                  className="w-full rounded-xl bg-[var(--accent)] px-4 py-2 font-semibold text-[var(--bg)] disabled:opacity-60"
+                  disabled={saving}
+                >
+                  {saving ? "\uC800\uC7A5 \uC911..." : "\uC800\uC7A5"}
+                </button>
+                <button
+                  type="button"
+                  className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-2 text-sm font-semibold text-[var(--text)] hover:border-[var(--accent)] disabled:opacity-60"
+                  onClick={() => void sendRecoveryLink(selectedStudent.id)}
+                  disabled={saving || recoveryBusy}
+                >
+                  {recoveryBusy ? "처리 중..." : "🔑 비번 재설정 메일 보내기"}
+                </button>
+                <button
+                  type="button"
+                  className="mt-2 w-full rounded-xl border border-[var(--danger-text)] bg-[var(--danger-bg)] px-4 py-2 text-sm font-semibold text-[var(--danger-text)] hover:border-[var(--danger-text)] disabled:opacity-60"
+                  onClick={() => openArchiveModal(selectedStudent.id)}
+                  disabled={saving}
+                >
+                  📦 탈퇴 처리
+                </button>
+              </form>
             )}
+          </section>
+        </div>
+      </div>
+
+      {archiveTarget && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={closeArchiveModal}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 text-[var(--text)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold">📦 학생 탈퇴 처리</h3>
+            <p className="mt-2 text-sm text-[var(--text-muted)]">
+              <span className="font-medium text-[var(--text)]">{archiveTarget.name?.trim() || archiveTarget.id.slice(0, 8)}</span>
+              {" 학생을 탈퇴 처리할까요? 이력은 아카이브에 보존됩니다."}
+            </p>
+            <label className="mt-4 block text-sm text-[var(--text-muted)]">
+              {"탈퇴 사유"}
+              <textarea
+                className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                rows={3}
+                value={archiveReason}
+                onChange={(e) => setArchiveReason(e.target.value)}
+                placeholder={"예: 학원 그만둠, 학부모 요청 등"}
+                disabled={archiving}
+              />
+            </label>
+            <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                className="rounded-xl border border-[var(--border)] bg-[var(--bg)] px-4 py-2 text-sm text-[var(--text)] disabled:opacity-60"
+                onClick={closeArchiveModal}
+                disabled={archiving}
+              >
+                {"취소"}
+              </button>
+              <button
+                type="button"
+                className="rounded-xl border border-[var(--danger-text)] bg-[var(--danger-bg)] px-4 py-2 text-sm font-semibold text-[var(--danger-text)] disabled:opacity-60"
+                onClick={() => void submitArchive()}
+                disabled={archiving || archiveReason.trim().length === 0}
+              >
+                {archiving ? "처리 중..." : "탈퇴 처리"}
+              </button>
+            </div>
           </div>
         </div>
-      </SectionCard>
-    </PageShell>
+      )}
+
+      {recoveryResult && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={closeRecoveryModal}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 text-[var(--text)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold">{"🔑 비번 재설정 링크"}</h3>
+            <p className="mt-2 text-sm text-[var(--text-muted)]">
+              <span className="font-medium text-[var(--text)]">{recoveryResult.name?.trim() || recoveryResult.email}</span>
+              {" 학생에게 이 링크를 카톡/문자로 전달해 주세요. 링크는 일정 시간 후 만료돼요."}
+            </p>
+            <div className="mt-4 break-all rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-xs text-[var(--text)]">
+              {recoveryResult.actionLink}
+            </div>
+            <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                className="rounded-xl border border-[var(--border)] bg-[var(--bg)] px-4 py-2 text-sm text-[var(--text)]"
+                onClick={closeRecoveryModal}
+              >
+                {"닫기"}
+              </button>
+              <button
+                type="button"
+                className="rounded-xl border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--bg)]"
+                onClick={() => void copyRecoveryLink()}
+              >
+                {recoveryCopied ? "✓ 복사됨" : "📋 링크 복사"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
   );
 }

@@ -1,27 +1,28 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import Badge from "@/components/ui/Badge";
 import BadgeShowcasePanel from "@/components/badges/BadgeShowcasePanel";
+import { StatusChip, StudentChip } from "@/components/student/StatusChips";
 import PageShell from "@/components/ui/PageShell";
 import SectionCard from "@/components/ui/SectionCard";
 import WeeklyPathMissionCard from "@/components/student/WeeklyPathMissionCard";
+import WeeklyPathHeader from "@/components/student/WeeklyPathHeader";
+import { computeCurrentWeekKey, getWeeklyPathWithTheme, type WeeklyPathWithTheme } from "@/lib/weeklyPathTheme";
 import { studentMathCopy } from "@/constants/studentMathCopy";
 import { getStudentBadgeShowcase } from "@/lib/badges";
 import {
   formatCurriculumGradeLabel,
-  getAcademicContentFallbackMessage,
   getEffectiveSchoolGrade,
-  toCurriculumGradeNumber,
 } from "@/lib/academicYear";
 import { getConcept } from "@/lib/concepts";
 import { getConceptNode } from "@/lib/conceptMap";
 import {
   calculateStreak,
   fetchLatestInProgressAttempt,
-  fetchMathCareerMissions,
   fetchMathHomeFreshUnits,
+  fetchMissionsByCategory,
   fetchMathHomeGradeUnits,
   fetchMissionById,
   fetchMissionProgressMap,
@@ -47,6 +48,8 @@ import {
 import { buildRecommendationHref } from "@/lib/recommendationNavigation";
 import { toPrettyErrorString } from "@/lib/supabaseError";
 import { supabase } from "@/lib/supabaseClient";
+import XpLevelBar from "@/components/XpLevelBar";
+import { getLevelDisplay, calcProgress } from "@/lib/xpSystem";
 import type { ProfileSchoolLevel } from "@/lib/studentProfile";
 import type {
   ConceptMissionRecommendation,
@@ -60,7 +63,18 @@ import type {
 import type { BadgeShowcase } from "@/types/badges";
 import type { CurriculumUnit, GeneratedMission, StudentXpSummary } from "@/types/missions";
 
-const GRADE_FILTERS = [4, 5, 6, 7, 8, 9];
+const GRADE_FILTERS = [
+  { grade: 3, schoolLevel: "elementary" as const, label: "초3" },
+  { grade: 4, schoolLevel: "elementary" as const, label: "초4" },
+  { grade: 5, schoolLevel: "elementary" as const, label: "초5" },
+  { grade: 6, schoolLevel: "elementary" as const, label: "초6" },
+  { grade: 1, schoolLevel: "middle" as const,     label: "중1" },
+  { grade: 2, schoolLevel: "middle" as const,     label: "중2" },
+  { grade: 3, schoolLevel: "middle" as const,     label: "중3" },
+  { grade: 1, schoolLevel: "high" as const,       label: "고1" },
+  { grade: 2, schoolLevel: "high" as const,       label: "고2" },
+];
+type GradeFilter = typeof GRADE_FILTERS[number];
 const TODAY_GOAL = 1;
 const WEEKLY_GOAL = 5;
 
@@ -94,16 +108,15 @@ const RECOMMENDATION_SECTION_COPY = {
   strongDescription: "\uC790\uC2E0\uAC10\uC774 \uB192\uC740 \uB2E8\uC6D0\uC5D0\uC11C \uD55C \uB2E8\uACC4 \uB354 \uB3C4\uC804\uD574 \uBCFC \uBBF8\uC158\uC774\uC5D0\uC694.",
   strongEmpty: "\uB3C4\uC804 \uCD94\uCC9C \uBBF8\uC158\uC744 \uC900\uBE44 \uC911\uC774\uC5D0\uC694.",
 } as const;
-const CAREER_FILTERS = [
-  "\uC804\uCCB4",
-  "\uAC8C\uC784",
-  "\uB3D9\uBB3C",
-  "\uB85C\uBD07",
-  "\uCE74\uD398/\uCC3D\uC5C5",
-  "\uCD2C\uC601/\uB4DC\uB860",
-  "\uC774\uB3D9/\uBC30\uB2EC",
-] as const;
-type CareerFilter = (typeof CAREER_FILTERS)[number];
+const CATEGORY_OPTIONS: { label: string; value: string | null }[] = [
+  { label: "\uC804\uCCB4", value: null },
+  { label: "\uAC8C\uC784", value: "game" },
+  { label: "\uB3D9\uBB3C", value: "animal" },
+  { label: "\uB85C\uBD07", value: "robot" },
+  { label: "\uCE74\uD398/\uCC3D\uC5C5", value: "cafe" },
+  { label: "\uCD2C\uC601/\uB4DC\uB860", value: "drone" },
+  { label: "\uC774\uB3D9/\uBC30\uB2EC", value: "delivery" },
+];
 
 type RecommendationCategory = "not_started" | MissionRecommendationStatus;
 
@@ -131,12 +144,9 @@ function goalLabel(current: number, target: number, doneText: string): string {
   return `\uD604\uC7AC ${Math.min(current, target)}/${target}`;
 }
 
-function gradeLabel(grade: number): string {
-  return formatCurriculumGradeLabel(grade);
-}
 
 function unitMeta(unit: CurriculumUnit): string {
-  return formatCurriculumGradeLabel(unit.grade);
+  return formatCurriculumGradeLabel(unit.grade, unit.school_level);
 }
 
 function unitMissionCountLine(unit: MathHomeUnitCard): string {
@@ -387,7 +397,7 @@ function difficultyBadgeTone(difficulty: GeneratedMission["difficulty"]): string
   return "border-[rgba(255,214,117,0.35)] bg-[rgba(255,214,117,0.12)] text-[#633806]";
 }
 
-function careerMissionFilterLabel(mission: GeneratedMission): CareerFilter {
+function careerMissionFilterLabel(mission: GeneratedMission): string {
   const source = [
     decodeUnicode(mission.title),
     decodeUnicode(mission.mission_json.scenario),
@@ -461,7 +471,7 @@ export default function StudentMathPage() {
   const [error, setError] = useState<string | null>(null);
   const [sectionLoading, setSectionLoading] = useState(true);
   const [sectionError, setSectionError] = useState<string | null>(null);
-  const [selectedGrade, setSelectedGrade] = useState<number>(4);
+  const [selectedFilter, setSelectedFilter] = useState<GradeFilter>(GRADE_FILTERS[1]!); // 초4 기본값
   const [gradeUnits, setGradeUnits] = useState<MathHomeUnitCard[]>([]);
   const [freshUnits, setFreshUnits] = useState<MathHomeUnitCard[]>([]);
   const [missions, setMissions] = useState<GeneratedMission[]>([]);
@@ -475,14 +485,22 @@ export default function StudentMathPage() {
   const [weeklyCompletedCount, setWeeklyCompletedCount] = useState(0);
   const [streakDays, setStreakDays] = useState(0);
   const [xpSummary, setXpSummary] = useState<StudentXpSummary>(EMPTY_XP_SUMMARY);
+  const [xpStatus, setXpStatus] = useState<{
+    total_xp: number;
+    level: number;
+    daily_streak: number;
+    total_missions: number;
+    badge_count: number;
+  } | null>(null);
   const [badgeShowcase, setBadgeShowcase] = useState<BadgeShowcase>(EMPTY_BADGE_SHOWCASE);
   const [studentProfile, setStudentProfile] = useState<MathStudentProfile | null>(null);
-  const [selectedCareerFilter, setSelectedCareerFilter] = useState<CareerFilter>("\uC804\uCCB4");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [recommendationBundle, setRecommendationBundle] = useState<StudentMissionRecommendationBundle | null>(null);
   const [weeklyMathPath, setWeeklyMathPath] = useState<WeeklyMathPathResult | null>(null);
   const [todayRecommendation, setTodayRecommendation] = useState<TodayMathRecommendation | null>(null);
   const [weeklyMathPathError, setWeeklyMathPathError] = useState<string | null>(null);
   const [weeklyPathNotice, setWeeklyPathNotice] = useState<string | null>(null);
+  const [weeklyPathTheme, setWeeklyPathTheme] = useState<WeeklyPathWithTheme | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -516,8 +534,21 @@ export default function StudentMathPage() {
         let nextWeeklyMathPath: WeeklyMathPathResult | null = null;
         let nextTodayRecommendation: TodayMathRecommendation | null = null;
         let nextWeeklyMathPathError: string | null = null;
+        let nextWeeklyPathTheme: WeeklyPathWithTheme | null = null;
 
         if (user?.id) {
+          // XP 현황 비차단 조회
+          void (async () => {
+            try {
+              const { data } = await supabase
+                .from("v_student_xp_status")
+                .select("total_xp, level, daily_streak, total_missions, badge_count")
+                .eq("student_id", user.id)
+                .single();
+              if (data) setXpStatus(data);
+            } catch { /* 뷰 미존재 시 무시 */ }
+          })();
+
           const [latestAttempt, completedRows, stats, xp, badgeRes, signals, weakAnalysis, profileResult, recommendationBundleResult] = await Promise.allSettled([
             fetchLatestInProgressAttempt(user.id),
             fetchRecentCompletedMissions(3),
@@ -548,19 +579,26 @@ export default function StudentMathPage() {
           if (recommendationBundleResult.status === "fulfilled") {
             nextRecommendationBundle = recommendationBundleResult.value;
           } else {
-            console.error("Student math recommendation load failed:", toPrettyErrorString(recommendationBundleResult.reason), recommendationBundleResult.reason);
+            const reason = recommendationBundleResult.reason;
+            if (reason?.message === "Failed to fetch") {
+              console.error("[추천시스템] 네트워크 오류: Supabase 연결 실패. .env.local 확인 필요");
+            } else {
+              console.error("[추천시스템] 로드 실패:", toPrettyErrorString(reason), reason);
+            }
           }
           if (profileResult.status === "fulfilled" && !profileResult.value.error) {
             nextStudentProfile = profileResult.value.data;
           }
 
           try {
-            const [path, recommendation] = await Promise.all([
+            const [path, recommendation, theme] = await Promise.all([
               getWeeklyMathPath(user.id),
               getTodayMathRecommendation(user.id),
+              getWeeklyPathWithTheme(user.id, "math", computeCurrentWeekKey()).catch(() => null),
             ]);
             nextWeeklyMathPath = path;
             nextTodayRecommendation = recommendation;
+            nextWeeklyPathTheme = theme;
           } catch (weeklyPathLoadError) {
             console.error("Student math weekly path load failed:", toPrettyErrorString(weeklyPathLoadError), weeklyPathLoadError);
             nextWeeklyMathPathError = "추천 경로를 불러오지 못했어요. 잠시 후 다시 확인해 주세요.";
@@ -584,6 +622,7 @@ export default function StudentMathPage() {
         setWeeklyMathPath(nextWeeklyMathPath);
         setTodayRecommendation(nextTodayRecommendation);
         setWeeklyMathPathError(nextWeeklyMathPathError);
+        setWeeklyPathTheme(nextWeeklyPathTheme);
       } catch (e: unknown) {
         console.error("Student math load failed:", toPrettyErrorString(e), e);
         if (!mounted) return;
@@ -604,6 +643,7 @@ export default function StudentMathPage() {
         setWeeklyMathPath(null);
         setTodayRecommendation(null);
         setWeeklyMathPathError(null);
+        setWeeklyPathTheme(null);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -622,23 +662,20 @@ export default function StudentMathPage() {
       setSectionLoading(true);
       setSectionError(null);
       try {
-        const [nextGradeUnits, nextFreshUnits, nextCareerMissions] = await Promise.all([
-          fetchMathHomeGradeUnits(selectedGrade),
+        const [nextGradeUnits, nextFreshUnits] = await Promise.all([
+          fetchMathHomeGradeUnits(selectedFilter.grade, selectedFilter.schoolLevel),
           fetchMathHomeFreshUnits(4),
-          fetchMathCareerMissions(12),
         ]);
 
         if (!mounted) return;
         setGradeUnits(nextGradeUnits);
         setFreshUnits(nextFreshUnits);
-        setCareerMissions(nextCareerMissions);
       } catch (e: unknown) {
         console.error("Student math section load failed:", toPrettyErrorString(e), e);
         if (!mounted) return;
         setSectionError(studentMathCopy.loadError);
         setGradeUnits([]);
         setFreshUnits([]);
-        setCareerMissions([]);
       } finally {
         if (mounted) setSectionLoading(false);
       }
@@ -648,21 +685,34 @@ export default function StudentMathPage() {
     return () => {
       mounted = false;
     };
-  }, [selectedGrade]);
+  }, [selectedFilter]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadCategoryMissions = async () => {
+      try {
+        const next = await fetchMissionsByCategory(selectedCategory, "math", 6);
+        if (!mounted) return;
+        setCareerMissions(next);
+      } catch (e: unknown) {
+        console.error("Career missions load failed:", toPrettyErrorString(e), e);
+        if (!mounted) return;
+        setCareerMissions([]);
+      }
+    };
+
+    void loadCategoryMissions();
+    return () => {
+      mounted = false;
+    };
+  }, [selectedCategory]);
 
   const fallbackTodayMission = useMemo(() => pickTodayMission(missions), [missions]);
   const effectiveStudentGrade = useMemo(
     () => getEffectiveSchoolGrade(studentProfile?.school_level ?? null, studentProfile?.grade ?? null),
     [studentProfile?.grade, studentProfile?.school_level]
   );
-  const highContentFallbackMessage = useMemo(
-    () => getAcademicContentFallbackMessage(studentProfile?.school_level ?? null, studentProfile?.grade ?? null),
-    [studentProfile?.grade, studentProfile?.school_level]
-  );
-  const filteredCareerMissions = useMemo(() => {
-    if (selectedCareerFilter === "\uC804\uCCB4") return careerMissions;
-    return careerMissions.filter((mission) => careerMissionFilterLabel(mission) === selectedCareerFilter);
-  }, [careerMissions, selectedCareerFilter]);
   const currentGradeUnitIds = useMemo(() => new Set(gradeUnits.map((unit) => unit.id)), [gradeUnits]);
   const todayMission = todayRecommendation?.step.mission ?? fallbackTodayMission;
   const todayProgress = todayRecommendation?.step.progress ?? (todayMission ? progressMap[todayMission.id] : undefined);
@@ -843,17 +893,16 @@ export default function StudentMathPage() {
   const weakConceptLabel = topWeakConcept ? conceptLabel(topWeakConcept.concept) : "복습이 필요한 개념";
 
   useEffect(() => {
-    const promotedGrade = effectiveStudentGrade
-      ? toCurriculumGradeNumber(effectiveStudentGrade.schoolLevel, effectiveStudentGrade.grade)
-      : null;
+    if (!effectiveStudentGrade) return;
 
-    if (!promotedGrade) return;
+    const nextFilter =
+      GRADE_FILTERS.find(
+        (f) => f.grade === effectiveStudentGrade.grade && f.schoolLevel === effectiveStudentGrade.schoolLevel
+      ) ??
+      GRADE_FILTERS.find((f) => f.schoolLevel === effectiveStudentGrade.schoolLevel) ??
+      GRADE_FILTERS[6]!; // 중3 fallback
 
-    const nextSelectedGrade = GRADE_FILTERS.includes(promotedGrade)
-      ? promotedGrade
-      : GRADE_FILTERS[GRADE_FILTERS.length - 1] ?? 9;
-
-    setSelectedGrade(nextSelectedGrade);
+    setSelectedFilter(nextFilter);
   }, [effectiveStudentGrade]);
 
   return (
@@ -944,8 +993,34 @@ export default function StudentMathPage() {
             </div>
           </div>
         ) : (
-          <div className="rounded-3xl border border-[var(--border)] bg-[var(--card-soft)] p-5 text-sm text-[var(--text-muted)]">
-            아직 추천 경로가 준비되지 않았어요. 아래 추천 미션이나 단원 탐색에서 바로 시작할 수 있어요.
+          <div className="relative overflow-hidden rounded-3xl border border-dashed border-[var(--border)] bg-[var(--card-soft)] p-6">
+            <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-[var(--accent)]/8 blur-3xl" />
+            <div className="relative flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--card)] text-4xl shadow-sm">
+                📐
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-base font-semibold text-[var(--text)]">아직 추천 경로가 없어요</p>
+                <p className="mt-1 text-sm leading-relaxed text-[var(--text-muted)]">
+                  수학 미션을 처음 시작하는 중이에요. 아래 단원을 탐색해서 바로 시작하거나, 첫 미션을 골라보세요!
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <a
+                    href="#units"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--bg)] transition-opacity hover:opacity-90"
+                  >
+                    <span>단원 탐색하기</span>
+                    <span className="opacity-70">→</span>
+                  </a>
+                  <a
+                    href="#recommended"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-2 text-sm font-medium text-[var(--text)] transition-colors hover:border-[var(--accent)]"
+                  >
+                    추천 미션 보기
+                  </a>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </SectionCard>
@@ -957,11 +1032,21 @@ export default function StudentMathPage() {
         {weeklyMathPathError ? (
           <div className="rounded-3xl border border-[#6A2B2B] bg-[#2A1414] p-5 text-sm text-[#FFB4B4]">{weeklyMathPathError}</div>
         ) : weeklySteps.length === 0 ? (
-          <div className="rounded-3xl border border-[var(--border)] bg-[var(--card-soft)] p-5 text-sm text-[var(--text-muted)]">
-            아직 추천 경로가 준비되지 않았어요.
+          <div className="relative overflow-hidden rounded-3xl border border-dashed border-[var(--border)] bg-[var(--card-soft)] p-6">
+            <div className="pointer-events-none absolute -left-10 -bottom-10 h-32 w-32 rounded-full bg-[var(--accent)]/6 blur-3xl" />
+            <div className="relative flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--card)] text-3xl shadow-sm">
+                🗓️
+              </div>
+              <div>
+                <p className="text-base font-semibold text-[var(--text)]">이번 주 학습 루트를 준비하고 있어요</p>
+                <p className="mt-1 text-sm text-[var(--text-muted)]">첫 미션을 완료하면 맞춤 주간 루트가 자동으로 생성돼요.</p>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="space-y-4">
+            <WeeklyPathHeader theme={weeklyPathTheme} loading={loading} />
             <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
               <span className="rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-3 py-1">난이도 흐름: {weeklyPathSummary ?? "easy -> normal -> hard"}</span>
               <span className="rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-3 py-1">{weeklyMathPath?.completedCount ?? 0}개 완료</span>
@@ -990,7 +1075,7 @@ export default function StudentMathPage() {
                 {weeklyPathNotice}
               </div>
             )}
-            <div className="grid grid-cols-1 gap-3 xl:grid-cols-5">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
               {weeklySteps.map((step) => (
                 <WeeklyPathMissionCard
                   key={`${step.stepOrder}:${step.missionId}`}
@@ -1044,32 +1129,41 @@ export default function StudentMathPage() {
               <p className="text-base font-semibold text-[var(--text)]">수학 학습 대시보드</p>
               <p className="mt-1 text-sm text-[var(--text-muted)]">오늘의 미션, 성장 흐름, 다음 학습 포인트를 한눈에 볼 수 있어요.</p>
             </div>
-            <Badge
-              variant={todayStatusBadge.variant}
+            <StatusChip
+              variant={todayStatusBadge.variant === "success" ? "success" : todayStatusBadge.variant === "info" ? "info" : "muted"}
               className={todayStatusBadge.variant === "success" ? "shadow-[0_0_0_1px_rgba(122,210,164,0.25)]" : ""}
             >
               {todayStatusBadge.label}
-            </Badge>
+            </StatusChip>
           </div>
-          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] px-3 py-3">
-              <p className="text-[11px] text-[var(--text-muted)]">현재 레벨</p>
-              <p className="mt-1 text-sm font-semibold text-[var(--text)]">레벨 {xpSummary.level}</p>
-            </div>
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] px-3 py-3">
-              <p className="text-[11px] text-[var(--text-muted)]">총 XP</p>
-              <p className="mt-1 text-sm font-semibold text-[var(--text)]">{xpSummary.totalXp} XP</p>
-            </div>
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] px-3 py-3">
-              <p className="text-[11px] text-[var(--text-muted)]">다음 레벨까지</p>
-              <p className="mt-1 text-sm font-semibold text-[var(--text)]">{xpSummary.xpToNextLevel}XP 남았어요</p>
-            </div>
+          <div className="mt-4">
+            {xpStatus ? (() => {
+              const lv   = getLevelDisplay(xpStatus.level);
+              const prog = calcProgress(xpStatus.total_xp, xpStatus.level);
+              return (
+                <XpLevelBar
+                  level={xpStatus.level}
+                  levelName={lv.name}
+                  levelEmoji={lv.emoji}
+                  levelColor={lv.color}
+                  totalXp={xpStatus.total_xp}
+                  nextLevelXp={prog.nextXp}
+                  nextLevelName={getLevelDisplay(xpStatus.level + 1).name}
+                  progressPct={prog.pct}
+                  dailyStreak={xpStatus.daily_streak}
+                  totalMissions={xpStatus.total_missions}
+                  badgeCount={xpStatus.badge_count}
+                />
+              );
+            })() : (
+              <div className="h-24 bg-gray-100 dark:bg-gray-800 rounded-2xl animate-pulse" />
+            )}
+          </div>
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] px-3 py-3">
               <p className="text-[11px] text-[var(--text-muted)]">오늘 완료 미션</p>
               <p className="mt-1 text-sm font-semibold text-[var(--text)]">{todayCompletedCount}개</p>
             </div>
-          </div>
-          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] px-3 py-3">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-[11px] text-[var(--text-muted)]">오늘 목표</p>
@@ -1108,9 +1202,9 @@ export default function StudentMathPage() {
             </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            <div className="rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1 text-xs text-[var(--text)]">오늘 {todayCompletedCount}개 완료</div>
-            <div className="rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1 text-xs text-[var(--text)]">이번 주 {weeklyCompletedCount}/{WEEKLY_GOAL}</div>
-            <div className="rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1 text-xs text-[var(--text)]">{streakLabel(streakDays)}</div>
+            <StatusChip variant="info">오늘 {todayCompletedCount}개 완료</StatusChip>
+            <StatusChip variant="muted">이번 주 {weeklyCompletedCount}/{WEEKLY_GOAL}</StatusChip>
+            <StudentChip variant="today">{streakLabel(streakDays)}</StudentChip>
           </div>
           <p className="mt-3 text-sm text-[var(--text-muted)]">하루 {todayMinutes}분 정도로 핵심 개념을 차분히 점검해 보세요.</p>
           <p className="mt-2 text-sm text-[var(--text)]">오늘의 학습 포인트: {missionWhyLine(todayMission)}</p>
@@ -1139,24 +1233,19 @@ export default function StudentMathPage() {
         {effectiveStudentGrade && (
           <p className="mb-3 text-xs text-[var(--text-muted)]">{`\uD604\uC7AC \uD45C\uC2DC \uD559\uB144: ${effectiveStudentGrade.label}`}</p>
         )}
-        {highContentFallbackMessage && (
-          <div className="mb-3 rounded-2xl border border-[var(--warning-border)] bg-[var(--warning-bg)] px-3 py-2 text-xs text-[var(--text)]">
-            {highContentFallbackMessage}
-          </div>
-        )}
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-          {GRADE_FILTERS.map((grade) => (
+        <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
+          {GRADE_FILTERS.map((filter) => (
             <button
-              key={grade}
+              key={filter.label}
               type="button"
               className={`rounded-xl border px-3 py-2 text-sm ${
-                selectedGrade === grade
+                selectedFilter.label === filter.label
                   ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
                   : "border-[var(--border)] bg-[var(--card)] text-[var(--text-muted)]"
               }`}
-              onClick={() => setSelectedGrade(grade)}
+              onClick={() => setSelectedFilter(filter)}
             >
-              {gradeLabel(grade)}
+              {filter.label}
             </button>
           ))}
         </div>
@@ -1231,20 +1320,20 @@ export default function StudentMathPage() {
       
       <SectionCard header={studentMathCopy.careerSectionTitle} description={studentMathCopy.careerSectionDescription}>
         <div className="mb-4 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
-          {CAREER_FILTERS.map((filter) => {
-            const selected = selectedCareerFilter === filter;
+          {CATEGORY_OPTIONS.map((opt) => {
+            const selected = selectedCategory === opt.value;
             return (
               <button
-                key={filter}
+                key={opt.label}
                 type="button"
-                onClick={() => setSelectedCareerFilter(filter)}
+                onClick={() => setSelectedCategory(opt.value)}
                 className={`shrink-0 rounded-full border px-3.5 py-2 text-sm transition ${
                   selected
                     ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
                     : "border-[var(--border)] bg-[var(--card)] text-[var(--text-muted)] hover:border-[var(--accent)]/60 hover:text-[var(--text)]"
                 }`}
               >
-                {filter}
+                {opt.label}
               </button>
             );
           })}
@@ -1255,15 +1344,11 @@ export default function StudentMathPage() {
           <div className="rounded-2xl border border-[#6A2B2B] bg-[#2A1414] p-4 text-sm text-[#FFB4B4]">{sectionError}</div>
         ) : careerMissions.length === 0 ? (
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] p-4 text-sm text-[var(--text-muted)]">
-            {CAREER_SECTION_COPY.empty}
-          </div>
-        ) : filteredCareerMissions.length === 0 ? (
-          <div className="rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] p-4 text-sm text-[var(--text-muted)]">
-            {CAREER_SECTION_COPY.filteredEmpty}
+            {selectedCategory !== null ? CAREER_SECTION_COPY.filteredEmpty : CAREER_SECTION_COPY.empty}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {filteredCareerMissions.map((mission) => (
+            {careerMissions.map((mission) => (
               <div
                 key={mission.id}
                 className="flex h-full min-h-[220px] flex-col rounded-3xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)] transition duration-200 hover:-translate-y-0.5 hover:border-[var(--accent)] hover:shadow-[0_20px_45px_rgba(0,0,0,0.22)]"

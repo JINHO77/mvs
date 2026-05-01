@@ -6,7 +6,7 @@ import PageShell from "@/components/ui/PageShell";
 import SectionCard from "@/components/ui/SectionCard";
 import { supabase } from "@/lib/supabaseClient";
 
-type SchoolLevel = "elem" | "mid" | "high";
+type SchoolLevel = string;
 type PageState = "loading" | "ready";
 
 type MyStudentRow = {
@@ -26,11 +26,9 @@ type ReportFlagRow = {
   month: string;
 };
 
+const LEVEL_MAP: Record<string, string> = { elementary: "초등", middle: "중등", high: "고등", elem: "초등", mid: "중등" };
 function levelLabel(level: SchoolLevel | null): string {
-  if (level === "elem") return "초등";
-  if (level === "mid") return "중등";
-  if (level === "high") return "고등";
-  return "미정";
+  return LEVEL_MAP[level ?? ""] ?? "미정";
 }
 
 function fmtKst(iso: string | null): string {

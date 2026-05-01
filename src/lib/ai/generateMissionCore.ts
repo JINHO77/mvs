@@ -1,3 +1,4 @@
+import "server-only";
 import { createClient } from "@supabase/supabase-js";
 import type { MissionPayload } from "../../types/missions";
 import { toMissionPayload, validateMission, type MissionValidationResult } from "./validateMission";

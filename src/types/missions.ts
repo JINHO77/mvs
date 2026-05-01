@@ -1,4 +1,14 @@
-export type MissionStepType = "intro" | "input" | "choice" | "multi_select" | "concept";
+export type MissionStepType =
+  | "intro"
+  | "input"
+  | "choice"
+  | "multi_select"
+  | "concept"
+  | "writing"
+  | "self_explain"
+  | "fill_in_blanks"
+  | "drag_and_drop"
+  | "compare";
 
 export type MissionHint = {
   level: 1 | 2 | 3;
@@ -12,6 +22,81 @@ export type MissionSolution = {
   commonMistake?: string;
 };
 
+export type SelfExplainConfig = {
+  prompt?: string;
+  question: string;
+  answer: string;
+  answerType: "short" | "multiple_choice" | "number";
+  choices?: string[];
+  explanationPrompt: string;
+  expectedKeywords: string[];
+  minKeywords: number;
+  minLength: number;
+  sampleExplanation: string;
+};
+
+export type FillInBlanksBlank = {
+  id: number;
+  answer: string;
+  alternatives?: string[];
+  hint?: string;
+};
+
+export type FillInBlanksConfig = {
+  prompt?: string;
+  template: string;
+  blanks: FillInBlanksBlank[];
+};
+
+export type DragAndDropCategory = {
+  id: string;
+  label: string;
+  color?: string;
+};
+
+export type DragAndDropItem = {
+  text: string;
+  correctCategory: string;
+};
+
+export type DragAndDropPair = [string, string];
+
+export type DragAndDropConfig = {
+  prompt?: string;
+  mode: "classify" | "match";
+  categories?: DragAndDropCategory[];
+  items?: DragAndDropItem[];
+  leftColumn?: Array<{ id: string; text: string }>;
+  rightColumn?: Array<{ id: string; text: string }>;
+  correctPairs?: DragAndDropPair[];
+};
+
+export type CompareCandidateAnswer = {
+  id: string;
+  label: string;
+  answer?: string;
+  work?: string;
+  reasoning?: string;
+};
+
+export type CompareSubQuestion =
+  | { type: "select_better"; prompt: string; options: string[]; answer: number }
+  | {
+      type: "explain";
+      prompt: string;
+      expectedKeywords: string[];
+      minKeywords: number;
+      minLength: number;
+    };
+
+export type CompareConfig = {
+  prompt?: string;
+  passage?: string;
+  question: string;
+  answers: CompareCandidateAnswer[];
+  questions: CompareSubQuestion[];
+};
+
 export type MissionStep = {
   stepOrder: number;
   title: string;
@@ -19,7 +104,7 @@ export type MissionStep = {
   question?: string;
   explanation?: string;
   inputPlaceholder?: string;
-  answerType?: "number" | "text" | "equation";
+  answerType?: "number" | "text" | "equation" | "writing";
   correctAnswer?: string;
   acceptedAnswers?: string[];
   acceptedUnits?: string[];
@@ -35,6 +120,15 @@ export type MissionStep = {
   feedbackIncorrect?: string;
   conceptTitle?: string;
   conceptDescription?: string;
+  expectedSentenceCount?: number;
+  writingGuide?: string[];
+  sampleAnswer?: string;
+  keyExpressions?: string[];
+  commonMistakes?: string[];
+  selfExplain?: SelfExplainConfig;
+  fillInBlanks?: FillInBlanksConfig;
+  dragAndDrop?: DragAndDropConfig;
+  compare?: CompareConfig;
 };
 
 export type MissionPayload = {

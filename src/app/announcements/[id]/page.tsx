@@ -50,10 +50,16 @@ export default function AnnouncementDetailPage() {
   const [attachments, setAttachments] = useState<AnnouncementAttachment[]>([]);
   const [acknowledgedAt, setAcknowledgedAt] = useState<string | null>(null);
   const [ackBusy, setAckBusy] = useState(false);
+  const [isStarred, setIsStarred] = useState(false);
+  const [undoTarget, setUndoTarget] = useState<string | null>(null);
+
   const reportIdFromBody = announcement?.body?.match(REPORT_PATH_REGEX)?.[1] ?? null;
   const sanitizedBody = useMemo(() => {
     if (!announcement) return "";
-    const withoutReportPath = announcement.body.replace(REPORT_PATH_REGEX, "").trim();
+    const withoutReportPath = announcement.body
+      .replace(REPORT_PATH_REGEX, "")
+      .replace(/<!--\s*character:[a-z0-9_]+\s*-->/gi, "")
+      .trim();
     return withoutReportPath.replace(/\n{3,}/g, "\n\n");
   }, [announcement]);
 
@@ -155,55 +161,73 @@ export default function AnnouncementDetailPage() {
     let data: Announcement | null = null;
     const primaryFetch = await supabase
       .from("announcements")
-      .select("id,title,body,created_at,is_deleted,requires_ack,category")
+      .select("id,title,body,created_at,is_deleted,requires_ack,category,created_by")
       .eq("id", announcementId)
+      .neq("is_deleted", true)
       .maybeSingle<Announcement>();
     if (primaryFetch.error && isMissingAnnouncementCategoryError(primaryFetch.error)) {
       const fallbackFetch = await supabase
         .from("announcements")
-        .select("id,title,body,created_at,is_deleted,requires_ack")
+        .select("id,title,body,created_at,is_deleted,requires_ack,created_by")
         .eq("id", announcementId)
+        .neq("is_deleted", true)
         .maybeSingle<Omit<Announcement, "category">>();
       if (fallbackFetch.error) {
-        setError(ANNOUNCEMENT_TEXT.detailLoadFailedPrefix);
+        console.error("Announcement fallback fetch failed:", toPrettyErrorString(fallbackFetch.error), fallbackFetch.error);
+        setError(`${ANNOUNCEMENT_TEXT.detailLoadFailedPrefix}: ${fallbackFetch.error.message}`);
         setLoading(false);
         return;
       }
       data = fallbackFetch.data ? { ...fallbackFetch.data, category: null } : null;
     } else if (primaryFetch.error) {
-      setError(ANNOUNCEMENT_TEXT.detailLoadFailedPrefix);
+      console.error("Announcement fetch failed:", toPrettyErrorString(primaryFetch.error), primaryFetch.error);
+      setError(`${ANNOUNCEMENT_TEXT.detailLoadFailedPrefix}: ${primaryFetch.error.message}`);
       setLoading(false);
       return;
     } else {
       data = primaryFetch.data ?? null;
     }
+
     if (!data) {
+      console.warn("Announcement not found or RLS blocked:", announcementId);
       setAnnouncement(null);
       setAttachments([]);
       setLoading(false);
       return;
     }
 
-    try {
-      const next = await upsertReadState(data.id, false);
-      setAcknowledgedAt(next.acknowledgedAt);
-      router.refresh();
-    } catch (e: unknown) {
-      console.error("Announcement read/ack upsert failed:", toPrettyErrorString(e), e);
-    }
-
+    // Show the announcement immediately — don't block on side effects
     setAnnouncement(data);
-    if (!data.is_deleted) {
-      try {
-        const attachmentMap = await fetchAnnouncementAttachments([data.id]);
-        setAttachments(attachmentMap[data.id] ?? []);
-      } catch {
-        setAttachments([]);
-      }
-    } else {
-      setAttachments([]);
-    }
     setLoading(false);
+
+    // Load star state
+    const userId = session.user.id;
+    supabase
+      .from("announcement_reads")
+      .select("is_starred")
+      .eq("announcement_id", announcementId)
+      .eq("user_id", userId)
+      .maybeSingle<{ is_starred: boolean | null }>()
+      .then(({ data: readRow }) => {
+        setIsStarred(readRow?.is_starred ?? false);
+      });
+
+    // Mark as read (fire-and-forget)
+    upsertReadState(data.id, false)
+      .then((next) => {
+        setAcknowledgedAt(next.acknowledgedAt);
+        router.refresh();
+      })
+      .catch((e: unknown) => {
+        console.error("Announcement read upsert failed:", toPrettyErrorString(e), e);
+      });
+
+    // Load attachments (fire-and-forget)
+    if (!data.is_deleted) {
+      fetchAnnouncementAttachments([data.id])
+        .then((attachmentMap) => setAttachments(attachmentMap[data.id] ?? []))
+        .catch(() => setAttachments([]));
+    }
   };
 
   const handleAcknowledge = async () => {
@@ -220,6 +244,51 @@ export default function AnnouncementDetailPage() {
     } finally {
       setAckBusy(false);
     }
+  };
+
+  const handleStar = async () => {
+    if (!announcement) return;
+    const next = !isStarred;
+    setIsStarred(next);
+    const userId = (await supabase.auth.getUser()).data.user?.id ?? "";
+    if (!userId) return;
+    await supabase.from("announcement_reads").upsert(
+      { announcement_id: announcement.id, user_id: userId, is_starred: next },
+      { onConflict: "announcement_id,user_id" }
+    );
+  };
+
+  const handleDelete = async () => {
+    if (!announcement) return;
+    const annoId = announcement.id;
+    setUndoTarget(annoId);
+    const userId = (await supabase.auth.getUser()).data.user?.id ?? "";
+    if (!userId) return;
+    await supabase.from("announcement_reads").upsert(
+      { announcement_id: annoId, user_id: userId, is_hidden: true },
+      { onConflict: "announcement_id,user_id" }
+    );
+    setTimeout(() => {
+      setUndoTarget((prev) => {
+        if (prev === annoId) {
+          router.push("/announcements");
+        }
+        return null;
+      });
+    }, 3000);
+  };
+
+  const handleUndo = async () => {
+    if (!undoTarget) return;
+    const annoId = undoTarget;
+    setUndoTarget(null);
+    const userId = (await supabase.auth.getUser()).data.user?.id ?? "";
+    if (!userId) return;
+    await supabase
+      .from("announcement_reads")
+      .update({ is_hidden: false })
+      .eq("announcement_id", annoId)
+      .eq("user_id", userId);
   };
 
   const formatCreatedAt = (iso: string) => {
@@ -249,6 +318,38 @@ export default function AnnouncementDetailPage() {
       actions={<HomeLink />}
     >
       <SectionCard>
+        {/* Action bar */}
+        <div className="mb-4 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => router.push("/announcements")}
+            className="flex items-center gap-1 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+          >
+            ← 목록
+          </button>
+          <div className="flex-1" />
+          {announcement && !announcement.is_deleted && (
+            <>
+              <button
+                type="button"
+                onClick={() => void handleStar()}
+                title={isStarred ? "별표 해제" : "별표"}
+                className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-lg transition-colors hover:bg-[var(--accent-soft)]"
+              >
+                {isStarred ? "★" : "☆"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDelete()}
+                title="숨기기"
+                className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-base text-[var(--text-muted)] transition-colors hover:bg-red-50 hover:text-red-500"
+              >
+                🗑
+              </button>
+            </>
+          )}
+        </div>
+
         {!announcement ? (
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 text-sm text-[var(--text-muted)] shadow-[var(--shadow)]">
             {ANNOUNCEMENT_TEXT.detailNotFound}
@@ -282,7 +383,7 @@ export default function AnnouncementDetailPage() {
                     <button
                       key={file.id}
                       type="button"
-                    className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
+                      className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
                       onClick={() => void downloadAttachment(file.file_path)}
                     >
                       {file.file_name}
@@ -295,7 +396,7 @@ export default function AnnouncementDetailPage() {
             {reportIdFromBody && (
               <Link
                 href={`/reports/${reportIdFromBody}`}
-              className="inline-flex w-full justify-center rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[var(--bg)]"
+                className="inline-flex w-full justify-center rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[var(--bg)]"
               >
                 리포트 보기
               </Link>
@@ -327,17 +428,21 @@ export default function AnnouncementDetailPage() {
             {error}
           </div>
         )}
-
-        <button
-          className="mt-5 w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
-          onClick={() => {
-            router.refresh();
-            router.push("/announcements");
-          }}
-        >
-          {ANNOUNCEMENT_TEXT.moveToList}
-        </button>
       </SectionCard>
+
+      {/* Undo toast */}
+      {undoTarget && (
+        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] px-5 py-3 shadow-lg text-sm text-[var(--text)]">
+          <span>알리미가 숨겨졌어요</span>
+          <button
+            type="button"
+            onClick={() => void handleUndo()}
+            className="font-semibold text-[var(--accent)] hover:opacity-80"
+          >
+            실행 취소
+          </button>
+        </div>
+      )}
     </PageShell>
   );
 }

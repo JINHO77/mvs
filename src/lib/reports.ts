@@ -26,6 +26,7 @@ export type ReportEnglishMetricsRow = {
 };
 
 export type ReportListItem = ReportRow & {
+  announcement_id: string | null;
   student_name: string | null;
   is_read: boolean;
   english_metrics: ReportEnglishMetricsRow | null;
@@ -89,6 +90,34 @@ export type OwnerMonthlyReportCoverage = {
   byGroup: OwnerMonthlyReportCoverageGroup[];
 };
 
+export type OwnerReportMissingRow = {
+  student_id: string;
+  student_name: string | null;
+  school_level: string | null;
+  grade: number | null;
+  class_label: string | null;
+  group_label: string;
+  this_month_done: boolean;
+  last_month_done: boolean;
+  prev2_month_done: boolean;
+  days_until_deadline: number;
+  this_month_str: string;
+  school_level_order: number | null;
+};
+
+export type OwnerReportMissingStatus =
+  | "done"
+  | "chronic_3m"
+  | "chronic_2m"
+  | "missing_this_month";
+
+export function getOwnerReportMissingStatus(row: OwnerReportMissingRow): OwnerReportMissingStatus {
+  if (row.this_month_done) return "done";
+  if (!row.last_month_done && !row.prev2_month_done) return "chronic_3m";
+  if (!row.last_month_done) return "chronic_2m";
+  return "missing_this_month";
+}
+
 type ProfileMini = {
   id: string;
   role: string | null;
@@ -116,6 +145,20 @@ type ReportDbWriteRow = {
   created_by: string;
   created_at: string;
   updated_at: string;
+};
+
+type ReportReadStatusRow = {
+  report_id: string;
+  student_read: boolean | null;
+  parent_total_count: number | null;
+  parent_read_count: number | null;
+  parent_all_read: boolean | null;
+  current_parent_linked: boolean | null;
+};
+
+type ReportFetchRow = ReportDbWriteRow & {
+  title: string | null;
+  announcement_id: string | null;
 };
 
 function monthToDate(monthYYYYMM: string): string {
@@ -226,36 +269,16 @@ async function fetchStudentNameMap(studentIds: string[]): Promise<Map<string, st
   return new Map((data ?? []).map((row) => [row.id, row.name]));
 }
 
-async function fetchGuardianMap(studentIds: string[]): Promise<Map<string, string[]>> {
-  if (studentIds.length === 0) return new Map();
-  const { data, error } = await supabase
-    .from("student_guardians")
-    .select("student_id,guardian_id")
-    .in("student_id", studentIds)
-    .returns<Array<{ student_id: string | null; guardian_id: string | null }>>();
-  if (error) throw error;
 
-  const result = new Map<string, string[]>();
-  for (const row of data ?? []) {
-    if (!row.student_id || !row.guardian_id) continue;
-    const existing = result.get(row.student_id) ?? [];
-    existing.push(row.guardian_id);
-    result.set(row.student_id, existing);
-  }
-  return result;
-}
-
-async function fetchReportReadRows(
-  reportIds: string[]
-): Promise<Array<{ report_id: string; user_id: string; read_at: string | null }>> {
-  if (reportIds.length === 0) return [];
+async function fetchReadStatusMap(reportIds: string[]): Promise<Map<string, ReportReadStatusRow>> {
+  if (reportIds.length === 0) return new Map();
   const { data, error } = await supabase
-    .from("report_reads")
-    .select("report_id,user_id,read_at")
+    .from("report_read_status")
+    .select("report_id,student_read,parent_total_count,parent_read_count,parent_all_read,current_parent_linked")
     .in("report_id", reportIds)
-    .returns<Array<{ report_id: string; user_id: string; read_at: string | null }>>();
+    .returns<ReportReadStatusRow[]>();
   if (error) throw error;
-  return data ?? [];
+  return new Map((data ?? []).map((row) => [row.report_id, row]));
 }
 
 function toneClassName(tone: ReportBadgeTone): string {
@@ -294,52 +317,6 @@ export function getStudentConfirmStatus(isConfirmed: boolean | null): ReportStat
     : { label: "학생 확인 필요", tone: "accent" };
 }
 
-async function enrichOwnerRows(rows: ReportRow[], ownerUserId: string): Promise<ReportListItem[]> {
-  const reportIds = rows.map((row) => row.id);
-  const studentIds = Array.from(new Set(rows.map((row) => row.student_id)));
-  const [metricsMap, studentMap, guardianMap, readRows, lastAnnouncementMap] = await Promise.all([
-    fetchMetricsMap(reportIds),
-    fetchStudentNameMap(studentIds),
-    fetchGuardianMap(studentIds),
-    fetchReportReadRows(reportIds),
-    fetchLastAnnouncementMap(reportIds, ownerUserId),
-  ]);
-
-  const readsByReport = new Map<string, Array<{ user_id: string; read_at: string | null }>>();
-  for (const row of readRows) {
-    const existing = readsByReport.get(row.report_id) ?? [];
-    existing.push({ user_id: row.user_id, read_at: row.read_at });
-    readsByReport.set(row.report_id, existing);
-  }
-
-  return rows.map((row) => {
-    const reportReads = readsByReport.get(row.id) ?? [];
-    const studentReadRow = reportReads.find((readRow) => readRow.user_id === row.student_id) ?? null;
-    const guardianIds = guardianMap.get(row.student_id) ?? [];
-    const parentReadCount = new Set(
-      reportReads
-        .filter((readRow) => guardianIds.includes(readRow.user_id))
-        .map((readRow) => readRow.user_id)
-    ).size;
-    const parentTotalCount = guardianIds.length;
-    const parentAllRead = parentTotalCount > 0 && parentReadCount >= parentTotalCount;
-
-    return {
-      ...row,
-      student_name: studentMap.get(row.student_id) ?? null,
-      is_read: !!studentReadRow || parentReadCount > 0,
-      english_metrics: metricsMap.get(row.id) ?? null,
-      student_read: !!studentReadRow,
-      student_read_at: studentReadRow?.read_at ?? null,
-      student_confirmed: null,
-      parent_read_count: parentReadCount,
-      parent_total_count: parentTotalCount,
-      parent_all_read: parentAllRead,
-      current_parent_linked: parentTotalCount > 0,
-      last_announced_at: lastAnnouncementMap.get(row.id) ?? null,
-    };
-  });
-}
 
 async function fetchLastAnnouncementMap(reportIds: string[], ownerUserId: string): Promise<Map<string, string>> {
   if (reportIds.length === 0) return new Map();
@@ -364,112 +341,35 @@ async function fetchLastAnnouncementMap(reportIds: string[], ownerUserId: string
   return result;
 }
 
-async function enrichRows(rows: ReportRow[], userId: string): Promise<ReportListItem[]> {
-  const reportIds = rows.map((r) => r.id);
-  const metricsMap = await fetchMetricsMap(reportIds);
-  const studentMap = await fetchStudentNameMap(Array.from(new Set(rows.map((r) => r.student_id))));
-  const readSet = await fetchReadSet(reportIds, userId);
 
-  return rows.map((row) => ({
-    ...row,
-    student_name: studentMap.get(row.student_id) ?? null,
-    is_read: readSet.has(row.id),
-    english_metrics: metricsMap.get(row.id) ?? null,
-    student_read: false,
-    student_read_at: null,
-    student_confirmed: null,
-    parent_read_count: 0,
-    parent_total_count: 0,
-    parent_all_read: false,
-    current_parent_linked: false,
-    last_announced_at: null,
-  }));
-}
 
-async function enrichParentRows(rows: ReportRow[], guardianId: string): Promise<ReportListItem[]> {
+async function enrichStudentRows(rows: ReportRow[], _studentUserId: string): Promise<ReportListItem[]> {
   const reportIds = rows.map((row) => row.id);
   const studentIds = Array.from(new Set(rows.map((row) => row.student_id)));
-  const [metricsMap, studentMap, guardianMap, readRows, parentReadSet] = await Promise.all([
+  // RLS on report_reads only exposes rows where user_id = auth.uid(), so a direct
+  // query from a student session cannot see parent reads. Use the view instead,
+  // which aggregates all parties with elevated privileges.
+  const [metricsMap, studentMap, statusMap] = await Promise.all([
     fetchMetricsMap(reportIds),
     fetchStudentNameMap(studentIds),
-    fetchGuardianMap(studentIds),
-    fetchReportReadRows(reportIds),
-    fetchReadSet(reportIds, guardianId),
+    fetchReadStatusMap(reportIds),
   ]);
 
-  const readsByReport = new Map<string, Array<{ user_id: string; read_at: string | null }>>();
-  for (const row of readRows) {
-    const existing = readsByReport.get(row.report_id) ?? [];
-    existing.push({ user_id: row.user_id, read_at: row.read_at });
-    readsByReport.set(row.report_id, existing);
-  }
-
   return rows.map((row) => {
-    const reportReads = readsByReport.get(row.id) ?? [];
-    const studentReadRow = reportReads.find((readRow) => readRow.user_id === row.student_id) ?? null;
-    const guardianIds = guardianMap.get(row.student_id) ?? [];
-    const currentParentLinked = guardianIds.includes(guardianId);
-    const parentReadCount = currentParentLinked && parentReadSet.has(row.id) ? 1 : 0;
-    const parentTotalCount = currentParentLinked ? 1 : 0;
-
+    const status = statusMap.get(row.id);
     return {
       ...row,
+      announcement_id: null,
       student_name: studentMap.get(row.student_id) ?? null,
-      is_read: parentReadSet.has(row.id),
+      is_read: status?.student_read ?? false,
       english_metrics: metricsMap.get(row.id) ?? null,
-      student_read: !!studentReadRow,
-      student_read_at: studentReadRow?.read_at ?? null,
+      student_read: status?.student_read ?? false,
+      student_read_at: null,
       student_confirmed: null,
-      parent_read_count: parentReadCount,
-      parent_total_count: parentTotalCount,
-      parent_all_read: parentTotalCount > 0 && parentReadCount >= parentTotalCount,
-      current_parent_linked: currentParentLinked,
-      last_announced_at: null,
-    };
-  });
-}
-
-async function enrichStudentRows(rows: ReportRow[], studentUserId: string): Promise<ReportListItem[]> {
-  const reportIds = rows.map((row) => row.id);
-  const studentIds = Array.from(new Set(rows.map((row) => row.student_id)));
-  const [metricsMap, studentMap, guardianMap, readRows] = await Promise.all([
-    fetchMetricsMap(reportIds),
-    fetchStudentNameMap(studentIds),
-    fetchGuardianMap(studentIds),
-    fetchReportReadRows(reportIds),
-  ]);
-
-  const readsByReport = new Map<string, Array<{ user_id: string; read_at: string | null }>>();
-  for (const row of readRows) {
-    const existing = readsByReport.get(row.report_id) ?? [];
-    existing.push({ user_id: row.user_id, read_at: row.read_at });
-    readsByReport.set(row.report_id, existing);
-  }
-
-  return rows.map((row) => {
-    const reportReads = readsByReport.get(row.id) ?? [];
-    const studentReadRow = reportReads.find((readRow) => readRow.user_id === studentUserId) ?? null;
-    const guardianIds = guardianMap.get(row.student_id) ?? [];
-    const parentReadCount = new Set(
-      reportReads
-        .filter((readRow) => guardianIds.includes(readRow.user_id))
-        .map((readRow) => readRow.user_id)
-    ).size;
-    const parentTotalCount = guardianIds.length;
-    const parentAllRead = parentTotalCount > 0 && parentReadCount >= parentTotalCount;
-
-    return {
-      ...row,
-      student_name: studentMap.get(row.student_id) ?? null,
-      is_read: !!studentReadRow,
-      english_metrics: metricsMap.get(row.id) ?? null,
-      student_read: !!studentReadRow,
-      student_read_at: studentReadRow?.read_at ?? null,
-      student_confirmed: null,
-      parent_read_count: parentReadCount,
-      parent_total_count: parentTotalCount,
-      parent_all_read: parentAllRead,
-      current_parent_linked: guardianIds.length > 0,
+      parent_read_count: Number(status?.parent_read_count ?? 0),
+      parent_total_count: Number(status?.parent_total_count ?? 0),
+      parent_all_read: status?.parent_all_read ?? false,
+      current_parent_linked: status?.current_parent_linked ?? false,
       last_announced_at: null,
     };
   });
@@ -633,7 +533,7 @@ export async function listOwnerReports(filters?: { month?: string; studentId?: s
 
   let query = supabase
     .from("reports")
-    .select("id,academy_id,student_id,month,math_pdf_path,math_pdf_name,math_pdf_size,created_by,created_at,updated_at")
+    .select("id,academy_id,student_id,month,report_month,title,math_pdf_path,math_pdf_name,math_pdf_size,announcement_id,created_by,created_at,updated_at")
     .eq("academy_id", me.academy_id)
     .eq("subject", MONTHLY_REPORT_SUBJECT)
     .eq("is_deleted", false)
@@ -644,10 +544,40 @@ export async function listOwnerReports(filters?: { month?: string; studentId?: s
   if (month) query = query.eq("month", monthToDate(month));
   if (isUuid(filters?.studentId)) query = query.eq("student_id", filters.studentId);
 
-  const { data: rows, error } = await query.returns<ReportRow[]>();
-  if (error) throw error;
+  const { data: reportData, error: reportError } = await query.returns<ReportFetchRow[]>();
+  if (reportError) throw reportError;
 
-  return enrichOwnerRows(rows ?? [], me.id);
+  const rows = reportData ?? [];
+  if (rows.length === 0) return [];
+
+  const reportIds = rows.map((row) => row.id);
+  const studentIds = Array.from(new Set(rows.map((row) => row.student_id)));
+  const [metricsMap, studentMap, statusMap, lastAnnouncementMap] = await Promise.all([
+    fetchMetricsMap(reportIds),
+    fetchStudentNameMap(studentIds),
+    fetchReadStatusMap(reportIds),
+    fetchLastAnnouncementMap(reportIds, me.id),
+  ]);
+
+  return rows.map((row) => {
+    const reportRow = toReportRow(row);
+    const status = statusMap.get(row.id);
+    return {
+      ...reportRow,
+      announcement_id: row.announcement_id ?? null,
+      student_name: studentMap.get(row.student_id) ?? null,
+      is_read: (status?.student_read ?? false) || Number(status?.parent_read_count ?? 0) > 0,
+      english_metrics: metricsMap.get(row.id) ?? null,
+      student_read: status?.student_read ?? false,
+      student_read_at: null,
+      student_confirmed: null,
+      parent_read_count: Number(status?.parent_read_count ?? 0),
+      parent_total_count: Number(status?.parent_total_count ?? 0),
+      parent_all_read: status?.parent_all_read ?? false,
+      current_parent_linked: status?.current_parent_linked ?? false,
+      last_announced_at: lastAnnouncementMap.get(row.id) ?? null,
+    };
+  });
 }
 
 export async function getOwnerReportStats(): Promise<OwnerReportStats> {
@@ -791,6 +721,24 @@ export async function getOwnerMonthlyReportCoverage(): Promise<OwnerMonthlyRepor
   };
 }
 
+export async function getOwnerReportMissingOverview(): Promise<OwnerReportMissingRow[]> {
+  const me = await getMe();
+  if (me.role !== "owner") throw new Error("리포트 누락 현황 조회 권한이 없습니다.");
+  if (!isUuid(me.academy_id)) return [];
+
+  const { data, error } = await supabase
+    .from("v_owner_report_missing_overview")
+    .select("*")
+    .order("this_month_done", { ascending: true })
+    .order("school_level_order", { ascending: true })
+    .order("grade", { ascending: true })
+    .order("class_label", { ascending: true, nullsFirst: false })
+    .order("student_name", { ascending: true })
+    .returns<OwnerReportMissingRow[]>();
+  if (error) throw error;
+  return data ?? [];
+}
+
 export async function listStudentReports(studentId: string, month?: string | null): Promise<ReportListItem[]> {
   const me = await getMe();
   if (me.role !== "student" || (me.account_status ?? "active") !== "active") throw new Error("리포트 조회 권한이 없습니다.");
@@ -826,7 +774,7 @@ export async function listParentReports(studentId: string, month?: string | null
 
   let query = supabase
     .from("reports")
-    .select("id,academy_id,student_id,month,math_pdf_path,math_pdf_name,math_pdf_size,created_by,created_at,updated_at")
+    .select("id,academy_id,student_id,month,report_month,title,math_pdf_path,math_pdf_name,math_pdf_size,announcement_id,created_by,created_at,updated_at")
     .eq("student_id", studentId)
     .eq("subject", MONTHLY_REPORT_SUBJECT)
     .eq("is_deleted", false)
@@ -836,9 +784,40 @@ export async function listParentReports(studentId: string, month?: string | null
   const monthKey = normalizeMonthKey(month);
   if (monthKey) query = query.eq("month", monthToDate(monthKey));
 
-  const { data, error } = await query.returns<ReportRow[]>();
-  if (error) throw error;
-  return enrichParentRows(data ?? [], me.id);
+  const { data: reportData, error: reportError } = await query.returns<ReportFetchRow[]>();
+  if (reportError) throw reportError;
+
+  const rows = reportData ?? [];
+  if (rows.length === 0) return [];
+
+  const reportIds = rows.map((row) => row.id);
+  const studentIds = Array.from(new Set(rows.map((row) => row.student_id)));
+  const [metricsMap, studentMap, statusMap, myReadSet] = await Promise.all([
+    fetchMetricsMap(reportIds),
+    fetchStudentNameMap(studentIds),
+    fetchReadStatusMap(reportIds),
+    fetchReadSet(reportIds, me.id),
+  ]);
+
+  return rows.map((row) => {
+    const reportRow = toReportRow(row);
+    const status = statusMap.get(row.id);
+    return {
+      ...reportRow,
+      announcement_id: row.announcement_id ?? null,
+      student_name: studentMap.get(row.student_id) ?? null,
+      is_read: myReadSet.has(row.id),
+      english_metrics: metricsMap.get(row.id) ?? null,
+      student_read: status?.student_read ?? false,
+      student_read_at: null,
+      student_confirmed: null,
+      parent_read_count: Number(status?.parent_read_count ?? 0),
+      parent_total_count: Number(status?.parent_total_count ?? 0),
+      parent_all_read: status?.parent_all_read ?? false,
+      current_parent_linked: status?.current_parent_linked ?? false,
+      last_announced_at: null,
+    };
+  });
 }
 
 export async function listMyReports(): Promise<ReportListItem[]> {
@@ -851,23 +830,63 @@ export async function listMyReports(): Promise<ReportListItem[]> {
   if (me.role !== "student" && me.role !== "parent") throw new Error("리포트 조회 권한이 없습니다.");
   if (studentIds.length === 0) return [];
 
-  const { data: rows, error } = await supabase
+  if (me.role === "student") {
+    const { data, error } = await supabase
+      .from("reports")
+      .select("id,academy_id,student_id,month,math_pdf_path,math_pdf_name,math_pdf_size,created_by,created_at,updated_at")
+      .in("student_id", studentIds)
+      .eq("subject", MONTHLY_REPORT_SUBJECT)
+      .eq("is_deleted", false)
+      .order("month", { ascending: false })
+      .order("created_at", { ascending: false })
+      .returns<ReportRow[]>();
+    if (error) throw error;
+    return enrichStudentRows(data ?? [], me.id);
+  }
+
+  // parent: use report_read_status view
+  const { data: reportData, error: reportError } = await supabase
     .from("reports")
-    .select("id,academy_id,student_id,month,math_pdf_path,math_pdf_name,math_pdf_size,created_by,created_at,updated_at")
+    .select("id,academy_id,student_id,month,report_month,title,math_pdf_path,math_pdf_name,math_pdf_size,announcement_id,created_by,created_at,updated_at")
     .in("student_id", studentIds)
     .eq("subject", MONTHLY_REPORT_SUBJECT)
     .eq("is_deleted", false)
     .order("month", { ascending: false })
     .order("created_at", { ascending: false })
-    .returns<ReportRow[]>();
-  if (error) throw error;
-  if (me.role === "parent") {
-    return enrichParentRows(rows ?? [], me.id);
-  }
-  if (me.role === "student") {
-    return enrichStudentRows(rows ?? [], me.id);
-  }
-  return enrichRows(rows ?? [], me.id);
+    .returns<ReportFetchRow[]>();
+  if (reportError) throw reportError;
+
+  const rows = reportData ?? [];
+  if (rows.length === 0) return [];
+
+  const reportIds = rows.map((row) => row.id);
+  const allStudentIds = Array.from(new Set(rows.map((row) => row.student_id)));
+  const [metricsMap, studentMap, statusMap, myReadSet] = await Promise.all([
+    fetchMetricsMap(reportIds),
+    fetchStudentNameMap(allStudentIds),
+    fetchReadStatusMap(reportIds),
+    fetchReadSet(reportIds, me.id),
+  ]);
+
+  return rows.map((row) => {
+    const reportRow = toReportRow(row);
+    const status = statusMap.get(row.id);
+    return {
+      ...reportRow,
+      announcement_id: row.announcement_id ?? null,
+      student_name: studentMap.get(row.student_id) ?? null,
+      is_read: myReadSet.has(row.id),
+      english_metrics: metricsMap.get(row.id) ?? null,
+      student_read: status?.student_read ?? false,
+      student_read_at: null,
+      student_confirmed: null,
+      parent_read_count: Number(status?.parent_read_count ?? 0),
+      parent_total_count: Number(status?.parent_total_count ?? 0),
+      parent_all_read: status?.parent_all_read ?? false,
+      current_parent_linked: status?.current_parent_linked ?? false,
+      last_announced_at: null,
+    };
+  });
 }
 
 export async function getReportById(reportId: string): Promise<ReportWithStudent> {

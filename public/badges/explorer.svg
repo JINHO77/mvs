@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <radialGradient id="bgexp" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFFBEB"/>
+      <stop offset="100%" stop-color="#FDE68A"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#bgexp)" stroke="#D97706" stroke-width="2"/>
+  <!-- 나침반 -->
+  <circle cx="60" cy="55" r="26" fill="#92400E" stroke="#78350F" stroke-width="1.5"/>
+  <circle cx="60" cy="55" r="22" fill="#B45309"/>
+  <circle cx="60" cy="55" r="18" fill="#D97706"/>
+  <circle cx="60" cy="55" r="14" fill="#F59E0B"/>
+  <!-- 방위 표시 -->
+  <text x="60" y="38" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="900" fill="#FFFFFF">N</text>
+  <text x="60" y="76" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="900" fill="#FDE68A">S</text>
+  <text x="44" y="59" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="900" fill="#FDE68A">W</text>
+  <text x="76" y="59" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="900" fill="#FDE68A">E</text>
+  <!-- 바늘 -->
+  <polygon points="60,42 57,55 60,58 63,55" fill="#EF4444"/>
+  <polygon points="60,68 57,55 60,52 63,55" fill="#D1D5DB"/>
+  <circle cx="60" cy="55" r="3" fill="#1F2937"/>
+  <circle cx="60" cy="55" r="1.5" fill="#FFFFFF"/>
+  <!-- 반짝임 -->
+  <polygon points="60,15 62,21 68,21 63,25 65,31 60,27 55,31 57,25 52,21 58,21" fill="#FFD700" stroke="#F59E0B" stroke-width="0.5"/>
+  <circle cx="22" cy="35" r="2.5" fill="#FCD34D" opacity="0.8"/>
+  <circle cx="95" cy="38" r="2" fill="#F59E0B" opacity="0.7"/>
+  <text x="60" y="95" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="700" fill="#78350F" letter-spacing="0.5">단원 탐험가</text>
+  <text x="60" y="106" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#D97706" letter-spacing="0.3">COMMON</text>
+</svg>

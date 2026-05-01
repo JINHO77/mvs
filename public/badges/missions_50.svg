@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <radialGradient id="bg50" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFF8E1"/>
+      <stop offset="100%" stop-color="#FFD54F"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#bg50)" stroke="#F59E0B" stroke-width="2.5"/>
+  <!-- 왕관 -->
+  <polygon points="20,75 30,45 45,62 60,30 75,62 90,45 100,75" fill="#F59E0B" stroke="#D97706" stroke-width="2"/>
+  <polygon points="22,77 98,77 95,80 25,80" fill="#D97706"/>
+  <rect x="22" y="77" width="76" height="8" rx="2" fill="#B45309"/>
+  <!-- 보석들 -->
+  <circle cx="60" cy="52" r="8" fill="#EF4444" stroke="#B91C1C" stroke-width="1"/>
+  <circle cx="60" cy="52" r="5" fill="#FCA5A5"/>
+  <circle cx="60" cy="52" r="2" fill="#FFFFFF" opacity="0.8"/>
+  <ellipse cx="35" cy="68" rx="5" ry="5" fill="#3B82F6" stroke="#1D4ED8" stroke-width="1"/>
+  <ellipse cx="85" cy="68" rx="5" ry="5" fill="#10B981" stroke="#059669" stroke-width="1"/>
+  <!-- 빛 효과 -->
+  <polygon points="60,15 62,23 70,20 64,26 68,34 60,29 52,34 56,26 50,20 58,23" fill="#FBBF24" stroke="#F59E0B" stroke-width="0.5"/>
+  <text x="60" y="100" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="700" fill="#78350F" letter-spacing="0.5">미션 마스터</text>
+  <text x="60" y="111" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#D97706" letter-spacing="0.3">RARE</text>
+</svg>

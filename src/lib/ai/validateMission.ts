@@ -28,7 +28,7 @@ function validateStep(step: unknown, index: number): MissionValidationResult {
     return { ok: false, reason: `steps[${index}].stepOrder must be a number` };
   }
   if (!title) return { ok: false, reason: `steps[${index}].title is required` };
-  if (stepType !== "intro" && stepType !== "input" && stepType !== "choice" && stepType !== "concept") {
+  if (stepType !== "intro" && stepType !== "input" && stepType !== "choice" && stepType !== "concept" && stepType !== "writing") {
     return { ok: false, reason: `steps[${index}].stepType is invalid` };
   }
 
@@ -42,6 +42,24 @@ function validateStep(step: unknown, index: number): MissionValidationResult {
 
   if (step.acceptedUnits !== undefined && !asNonEmptyStringArray(step.acceptedUnits)) {
     return { ok: false, reason: `steps[${index}].acceptedUnits must contain only non-empty strings` };
+  }
+
+  if (step.expectedSentenceCount !== undefined) {
+    if (typeof step.expectedSentenceCount !== "number" || !Number.isFinite(step.expectedSentenceCount) || step.expectedSentenceCount < 1) {
+      return { ok: false, reason: `steps[${index}].expectedSentenceCount must be a positive number when provided` };
+    }
+  }
+
+  if (step.writingGuide !== undefined && !asNonEmptyStringArray(step.writingGuide)) {
+    return { ok: false, reason: `steps[${index}].writingGuide must contain only non-empty strings` };
+  }
+
+  if (step.keyExpressions !== undefined && !asNonEmptyStringArray(step.keyExpressions)) {
+    return { ok: false, reason: `steps[${index}].keyExpressions must contain only non-empty strings` };
+  }
+
+  if (step.commonMistakes !== undefined && !asNonEmptyStringArray(step.commonMistakes)) {
+    return { ok: false, reason: `steps[${index}].commonMistakes must contain only non-empty strings` };
   }
 
   if (step.hintLevel1 !== undefined && !asNonEmptyString(step.hintLevel1)) {

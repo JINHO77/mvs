@@ -7,7 +7,7 @@ import PublicHeader from "@/components/common/PublicHeader";
 import { AUTH_TEXT } from "@/constants/auth.ko";
 import { supabase } from "@/lib/supabaseClient";
 
-type SchoolLevel = "elem" | "mid" | "high";
+type SchoolLevel = "elementary" | "middle" | "high";
 
 function getSafeRedirect(): string | null {
   if (typeof window === "undefined") return null;
@@ -22,6 +22,8 @@ export default function SignupPage() {
   const [redirectTo, setRedirectTo] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [schoolLevel, setSchoolLevel] = useState<SchoolLevel | "">("");
   const [grade, setGrade] = useState<number | "">("");
@@ -36,7 +38,7 @@ export default function SignupPage() {
     setRedirectTo(getSafeRedirect());
   }, []);
 
-  const gradeOptions = schoolLevel === "elem" ? [1, 2, 3, 4, 5, 6] : schoolLevel ? [1, 2, 3] : [];
+  const gradeOptions = schoolLevel === "elementary" ? [1, 2, 3, 4, 5, 6] : schoolLevel ? [1, 2, 3] : [];
   const loginHref = useMemo(() => {
     const params = new URLSearchParams();
     if (mode === "parent") params.set("role", "parent");
@@ -58,6 +60,12 @@ export default function SignupPage() {
       return;
     }
 
+    if (password !== passwordConfirm) {
+      setPasswordError("비밀번호가 일치하지 않아요");
+      setError("비밀번호가 일치하지 않아요");
+      return;
+    }
+
     if (mode === "student" && (!schoolLevel || !gradeOptions.includes(Number(grade)))) {
       setError(AUTH_TEXT.invalidInput);
       return;
@@ -65,6 +73,14 @@ export default function SignupPage() {
 
     setLoading(true);
     try {
+      // 아카데미 ID 조회 (원장 페이지 필터링에 필수)
+      const { data: academyRow } = await supabase
+        .from("academies")
+        .select("id")
+        .limit(1)
+        .maybeSingle();
+      const academyId = academyRow?.id ?? null;
+
       const role = mode === "parent" ? "parent" : "student";
       const { error: signUpError } = await supabase.auth.signUp({
         email: trimmedEmail,
@@ -105,6 +121,7 @@ export default function SignupPage() {
               role: "parent",
               account_status: "active",
               name: trimmedName,
+              academy_id: academyId,
             }
           : {
               id: user.id,
@@ -115,19 +132,34 @@ export default function SignupPage() {
               school_level: schoolLevel,
               grade: Number(grade),
               class_label: trimmedClassLabel || null,
+              academy_id: academyId,
             };
 
       const { error: profileError } = await supabase.from("profiles").upsert(profilePayload, { onConflict: "id" });
-      if (profileError) throw profileError;
+      if (profileError) {
+        // Rollback: delete orphan auth account then sign out
+        const { data: { session: activeSession } } = await supabase.auth.getSession();
+        if (activeSession?.access_token) {
+          await fetch("/api/auth/cleanup", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${activeSession.access_token}` },
+          });
+        }
+        await supabase.auth.signOut();
+        throw new Error(`프로필 생성 실패: ${profileError.message}`);
+      }
+
+      router.refresh();
 
       if (mode === "parent") {
         setMessage(AUTH_TEXT.signupSuccessParent);
-        setTimeout(() => router.replace(redirectTo ?? "/parent"), 600);
+        setTimeout(() => router.push(redirectTo ?? "/parent"), 600);
         return;
       }
 
+      // 학생: 로그인 상태 유지하고 관심 분야 선택 단계로 이동 (저장 후 자동으로 승인 대기 페이지로)
       setMessage(AUTH_TEXT.signupSuccessStudent);
-      setTimeout(() => router.replace("/student"), 600);
+      setTimeout(() => router.push("/student/onboarding/interests"), 600);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : AUTH_TEXT.signUpLoginFailed);
     } finally {
@@ -190,11 +222,51 @@ export default function SignupPage() {
           <label className="mb-2 mt-4 block text-sm text-[var(--text)]">{AUTH_TEXT.passwordLabel}</label>
           <input
             type="password"
+            autoComplete="new-password"
             className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[var(--text)] outline-none placeholder:text-[var(--text-muted)] focus:ring-2 focus:ring-[var(--accent)]"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setPassword(next);
+              if (passwordConfirm && next !== passwordConfirm) {
+                setPasswordError("비밀번호가 일치하지 않아요");
+              } else {
+                setPasswordError(null);
+              }
+            }}
             placeholder={AUTH_TEXT.passwordLabel}
           />
+
+          <label className="mb-2 mt-4 block text-sm text-[var(--text)]">비밀번호 확인</label>
+          <input
+            type="password"
+            autoComplete="new-password"
+            className={`w-full rounded-xl border bg-[var(--card)] px-4 py-3 text-[var(--text)] outline-none placeholder:text-[var(--text-muted)] focus:ring-2 focus:ring-[var(--accent)] ${
+              passwordError ? "border-[var(--danger-text)]" : "border-[var(--border)]"
+            }`}
+            value={passwordConfirm}
+            onChange={(e) => {
+              const next = e.target.value;
+              setPasswordConfirm(next);
+              if (password && next && password !== next) {
+                setPasswordError("비밀번호가 일치하지 않아요");
+              } else {
+                setPasswordError(null);
+              }
+            }}
+            onBlur={() => {
+              if (password && passwordConfirm && password !== passwordConfirm) {
+                setPasswordError("비밀번호가 일치하지 않아요");
+              }
+            }}
+            placeholder="비밀번호 다시 입력"
+          />
+          {passwordError && (
+            <p className="mt-1 text-[13px] text-[var(--danger-text)]">⚠️ {passwordError}</p>
+          )}
+          {!passwordError && password && passwordConfirm && password === passwordConfirm && (
+            <p className="mt-1 text-[13px] text-[var(--success-text)]">✅ 비밀번호가 일치해요</p>
+          )}
 
           <label className="mb-2 mt-4 block text-sm text-[var(--text)]">{AUTH_TEXT.nameLabel}</label>
           <input
@@ -213,12 +285,12 @@ export default function SignupPage() {
                 onChange={(e) => {
                   const nextLevel = e.target.value as SchoolLevel | "";
                   setSchoolLevel(nextLevel);
-                  if (!nextLevel) setGrade("");
+                  setGrade(""); // school_level 변경 시 항상 초기화
                 }}
               >
                 <option value="">{AUTH_TEXT.selectPlaceholder}</option>
-                <option value="elem">초등</option>
-                <option value="mid">중등</option>
+                <option value="elementary">초등</option>
+                <option value="middle">중등</option>
                 <option value="high">고등</option>
               </select>
 
@@ -251,7 +323,14 @@ export default function SignupPage() {
             type="button"
             className="mt-5 w-full rounded-xl border border-[var(--accent)] bg-[var(--accent)] px-4 py-3 font-semibold text-[var(--bg)] disabled:opacity-60"
             onClick={() => void onSubmit()}
-            disabled={loading}
+            disabled={
+              loading ||
+              !email ||
+              !password ||
+              !passwordConfirm ||
+              password !== passwordConfirm ||
+              !!passwordError
+            }
           >
             {loading ? AUTH_TEXT.processing : mode === "parent" ? "학부모 계정 만들기" : AUTH_TEXT.signupSubmitButton}
           </button>

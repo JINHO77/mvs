@@ -32,6 +32,7 @@ type OwnerAnnouncementRow = {
   category: AnnouncementCategory | null;
   requires_ack: boolean | null;
   scheduled_at: string | null;
+  published_at: string | null;
   is_deleted: boolean;
 };
 
@@ -204,19 +205,25 @@ export default function OwnerAnnouncementsPage() {
       };
 
       let data: OwnerAnnouncementRow[] | null = null;
-      const primaryResult = await buildBaseQuery(
-        "id,title,body,created_at,audience_role,category,requires_ack,scheduled_at,is_deleted"
-      ).returns<OwnerAnnouncementRow[]>();
+      const primaryResultRaw = await buildBaseQuery(
+        "id,title,body,created_at,audience_role,category,requires_ack,scheduled_at,published_at,is_deleted"
+      );
+      const primaryResult = {
+        ...primaryResultRaw,
+        data: primaryResultRaw.data as OwnerAnnouncementRow[] | null,
+      };
 
       if (primaryResult.error && isMissingAnnouncementColumnError(primaryResult.error)) {
         const fallbackResult = await buildBaseQuery(
           "id,title,body,created_at,audience_role,requires_ack,is_deleted"
-        ).returns<Array<Omit<OwnerAnnouncementRow, "category" | "scheduled_at">>>();
+        );
         if (fallbackResult.error) throw fallbackResult.error;
-        data = (fallbackResult.data ?? []).map((row) => ({
+        type FallbackRow = Omit<OwnerAnnouncementRow, "category" | "scheduled_at" | "published_at">;
+        data = ((fallbackResult.data ?? []) as unknown as FallbackRow[]).map((row) => ({
           ...row,
           category: null,
           scheduled_at: null,
+          published_at: null,
         }));
       } else if (primaryResult.error) {
         throw primaryResult.error;
@@ -233,23 +240,23 @@ export default function OwnerAnnouncementsPage() {
         setTargetMap({});
         setStatMap({});
       } else {
-        const [attachmentResult, targetsByAnnouncement, deliveryResult] = await Promise.all([
+        const [attachmentResultRaw, targetsByAnnouncement, deliveryResultRaw] = await Promise.all([
           supabase
             .from("announcement_attachments")
             .select("announcement_id")
-            .in("announcement_id", ids)
-            .returns<Array<{ announcement_id: string }>>(),
+            .in("announcement_id", ids),
           fetchAnnouncementTargets(ids),
           supabase
             .from("announcement_reads")
             .select("announcement_id,user_id,read_at,acknowledged_at")
-            .in("announcement_id", ids)
-            .returns<AnnouncementReadRow[]>(),
+            .in("announcement_id", ids),
         ]);
 
-        const { data: attachmentRows, error: attachmentError } = attachmentResult;
+        const attachmentRows = attachmentResultRaw.data as Array<{ announcement_id: string }> | null;
+        const attachmentError = attachmentResultRaw.error;
+        const deliveryData = (deliveryResultRaw.data ?? []) as AnnouncementReadRow[];
         if (attachmentError) throw attachmentError;
-        if (deliveryResult.error) throw deliveryResult.error;
+        if (deliveryResultRaw.error) throw deliveryResultRaw.error;
 
         const map = (attachmentRows ?? []).reduce<Record<string, number>>((acc, row) => {
           acc[row.announcement_id] = (acc[row.announcement_id] ?? 0) + 1;
@@ -257,7 +264,7 @@ export default function OwnerAnnouncementsPage() {
         }, {});
         setAttachmentCountMap(map);
         setTargetMap(targetsByAnnouncement);
-        const readsByAnnouncement = (deliveryResult.data ?? []).reduce<Record<string, Map<string, AnnouncementReadRow>>>((acc, row) => {
+        const readsByAnnouncement = deliveryData.reduce<Record<string, Map<string, AnnouncementReadRow>>>((acc, row) => {
           if (!acc[row.announcement_id]) acc[row.announcement_id] = new Map<string, AnnouncementReadRow>();
           acc[row.announcement_id].set(row.user_id, row);
           return acc;
@@ -348,13 +355,13 @@ export default function OwnerAnnouncementsPage() {
         return;
       }
 
-      const { data: readRows, error: recipientError } = await supabase
+      const readRowsResult = await supabase
         .from("announcement_reads")
         .select("user_id")
         .eq("announcement_id", row.id)
-        .is("acknowledged_at", null)
-        .returns<Array<{ user_id: string | null }>>();
-      if (recipientError) throw recipientError;
+        .is("acknowledged_at", null);
+      if (readRowsResult.error) throw readRowsResult.error;
+      const readRows = readRowsResult.data as Array<{ user_id: string | null }> | null;
 
       const recipientIds = Array.from(
         new Set(
@@ -515,7 +522,14 @@ export default function OwnerAnnouncementsPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="truncate text-sm font-semibold text-[var(--text)]">{row.title}</h3>
                         <Badge variant={getAnnouncementCategoryBadgeVariant(row.category)}>{getAnnouncementCategoryLabel(row.category)}</Badge>
-                        {row.scheduled_at && <Badge variant="warning">{OWNER_ANNOUNCEMENTS_TEXT.scheduledLabel}</Badge>}
+                        {row.scheduled_at && !row.published_at && (
+                          <Badge variant="warning">
+                            예약 대기 · {new Date(row.scheduled_at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          </Badge>
+                        )}
+                        {row.scheduled_at && row.published_at && (
+                          <Badge variant="neutral">예약 발송됨</Badge>
+                        )}
                       </div>
                       <p className="mt-1 text-[11px] text-[var(--text-muted)]">{formatCreatedAt(row.created_at)}</p>
                       <p className="mt-1 text-xs text-[var(--text-muted)]">{row.body}</p>

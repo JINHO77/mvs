@@ -33,7 +33,7 @@ export const AUTH_TEXT = {
   gradeLabel: "학년",
   classLabelOptional: "반(선택)",
   signupSubmitButton: "가입 완료",
-  signupSuccessStudent: "가입이 완료되었습니다. 학생 화면으로 이동합니다.",
+  signupSuccessStudent: "가입이 완료되었습니다. 관심 분야 선택 단계로 이동합니다.",
   signupSuccessParent: "학부모 계정이 생성되었습니다. 자녀 연결을 이어서 진행해 주세요.",
   backToLogin: "이미 계정이 있어요",
   invalidInput: "필수 정보를 입력해 주세요.",

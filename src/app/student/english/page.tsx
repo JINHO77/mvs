@@ -7,8 +7,11 @@ import { useRouter } from "next/navigation";
 import Badge from "@/components/ui/Badge";
 import PageShell from "@/components/ui/PageShell";
 import SectionCard from "@/components/ui/SectionCard";
+import { ActionChip, StatusChip, StudentChip, XpBadge } from "@/components/student/StatusChips";
 import WeeklyPathMissionCard from "@/components/student/WeeklyPathMissionCard";
-import { formatCurriculumGradeLabel, getEffectiveSchoolGrade, toCurriculumGradeNumber } from "@/lib/academicYear";
+import WeeklyPathHeader from "@/components/student/WeeklyPathHeader";
+import { computeCurrentWeekKey, getWeeklyPathWithTheme, type WeeklyPathWithTheme } from "@/lib/weeklyPathTheme";
+import { formatCurriculumGradeLabel, getEffectiveSchoolGrade } from "@/lib/academicYear";
 import {
   calculateEnglishGrowthSummaryFromMissions,
   classifyEnglishMissionCategory,
@@ -45,7 +48,32 @@ import type { BadgeShowcase } from "@/types/badges";
 import type { ProfileSchoolLevel } from "@/lib/studentProfile";
 import type { CurriculumUnit, GeneratedMission, StudentXpSummary } from "@/types/missions";
 
-const GRADE_FILTERS = [4, 5, 6, 7, 8, 9];
+type DailyRoutineMissionCard = {
+  mission: GeneratedMission;
+  reason: string;
+  badge: string;
+  badgeVariant: "info" | "warning" | "success";
+};
+
+type EnglishSchoolLevel = "elementary" | "middle" | "high";
+type EnglishGradeFilter = { schoolLevel: EnglishSchoolLevel; grade: number; label: string };
+
+const GRADE_FILTERS: EnglishGradeFilter[] = [
+  { schoolLevel: "elementary", grade: 3, label: "초3" },
+  { schoolLevel: "elementary", grade: 4, label: "초4" },
+  { schoolLevel: "elementary", grade: 5, label: "초5" },
+  { schoolLevel: "elementary", grade: 6, label: "초6" },
+  { schoolLevel: "middle",     grade: 1, label: "중1" },
+  { schoolLevel: "middle",     grade: 2, label: "중2" },
+  { schoolLevel: "middle",     grade: 3, label: "중3" },
+  { schoolLevel: "high",       grade: 1, label: "고1" },
+  { schoolLevel: "high",       grade: 2, label: "고2" },
+];
+
+function findGradeFilter(schoolLevel: string | null | undefined, grade: number | null | undefined): EnglishGradeFilter | null {
+  if (!schoolLevel || grade == null) return null;
+  return GRADE_FILTERS.find((f) => f.schoolLevel === schoolLevel && f.grade === grade) ?? null;
+}
 const TODAY_GOAL = 1;
 const WEEKLY_GOAL = 5;
 const EMPTY_XP_SUMMARY: StudentXpSummary = {
@@ -109,7 +137,7 @@ const ENGLISH_COPY = {
   weeklyCompleteCount: "\uc774\ubc88 \uc8fc \uc644\ub8cc",
   growthEyebrow: "English Growth",
   growthDescription: "\uc624\ub298\uc758 \ud45c\ud604\uc744 \uc775\ud788\uba70, \ubbf8\uc158\uc744 \uafb8\uc900\ud788 \uc774\uc5b4 \uac00\ub294 \ud750\ub984 \uc18d\uc5d0\uc11c \uc601\uc5b4 \uc2e4\ub825\uc774 \uc790\uc5f0\uc2a4\ub7fd\uac8c \uc131\uc7a5\ud558\uace0 \uc788\uc5b4\uc694.",
-  growthDetail: "XP\uc640 \ubaa9\ud45c \uc9c4\ud589\ub960\uc740 \uc804\ccb4 \uc131\uc7a5 \ud750\ub984\uc744 \ubcf4\uc5ec \uc8fc\uace0, \uc544\ub798 \uc131\uc7a5 \uc9c0\ub3c4\ub294 \uc5b4\ub5a4 \uc601\uc5ed\uc774 \ub354 \ube60\ub974\uac8c \uc131\uc7a5 \uc911\uc778\uc9c0 \uc54c\ub824\uc918\uc694.",
+  growthDetail: "XP와 목표 진행률은 전체 성장 흐름을 보여 주고, 아래 성장 지도는 어떤 영역이 더 빠르게 성장 중인지 알려줘요.",
   levelPrefix: "\ub808\ubca8 ",
   xpSuffix: " XP",
   xpRemainingSuffix: " XP \ub0a8\uc74c",
@@ -181,8 +209,8 @@ function displayText(value: unknown, fallback = ""): string {
   return text || fallback;
 }
 
-function gradeLabel(grade: number): string {
-  return formatCurriculumGradeLabel(grade);
+function gradeLabel(grade: number, schoolLevel?: string | null): string {
+  return formatCurriculumGradeLabel(grade, schoolLevel ?? undefined);
 }
 
 function difficultyLabel(difficulty: GeneratedMission["difficulty"]): string {
@@ -204,6 +232,12 @@ function statusText(progress?: MissionProgressSummary): string {
   if (!progress || progress.status === "not_started") return ENGLISH_COPY.firstStart;
   if (progress.status === "completed") return ENGLISH_COPY.revisit;
   return ENGLISH_COPY.continueStudy;
+}
+
+function actionChipVariant(progress?: MissionProgressSummary): "start" | "continue" | "review" {
+  if (!progress || progress.status === "not_started") return "start";
+  if (progress.status === "completed") return "review";
+  return "continue";
 }
 
 function pickTodayMission(missions: GeneratedMission[]): GeneratedMission | null {
@@ -380,6 +414,8 @@ function RecommendationCard({
   accentLabel: string;
   progress?: MissionProgressSummary;
 }) {
+  const chipVariant = actionChipVariant(progress);
+
   return (
     <Link
       href={href}
@@ -387,17 +423,15 @@ function RecommendationCard({
     >
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <Badge variant={variant}>{displayText(badge)}</Badge>
-        <span className="inline-flex items-center rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-3 py-1 text-[11px] text-[var(--text-muted)]">
-          {displayText(progress ? statusText(progress) : accentLabel)}
-        </span>
+        <ActionChip variant={chipVariant}>{displayText(progress ? statusText(progress) : accentLabel)}</ActionChip>
       </div>
       <h3 className="mt-3 line-clamp-2 text-base font-semibold leading-6 text-[var(--text)] sm:text-lg">{displayText(item.mission.title)}</h3>
       <p className="mt-3 line-clamp-3 text-sm leading-6 text-[var(--text-muted)] sm:line-clamp-2">{displayText(item.reason)}</p>
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <p className="min-w-0 text-xs leading-5 text-[var(--text-muted)]">{metaLine(item.mission)}</p>
-        <span className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[var(--bg)] sm:w-auto">
+        <ActionChip variant={chipVariant} className="min-h-11 w-full justify-center rounded-full px-4 py-2.5 text-sm sm:w-auto">
           {displayText(accentLabel)}
-        </span>
+        </ActionChip>
       </div>
     </Link>
   );
@@ -407,7 +441,7 @@ export default function StudentEnglishPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedGrade, setSelectedGrade] = useState<number>(4);
+  const [selectedFilter, setSelectedFilter] = useState<EnglishGradeFilter>(GRADE_FILTERS[1]!); // 초4 기본값
   const [units, setUnits] = useState<CurriculumUnit[]>([]);
   const [missions, setMissions] = useState<GeneratedMission[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, MissionProgressSummary>>({});
@@ -423,6 +457,7 @@ export default function StudentEnglishPage() {
   const [todayRecommendation, setTodayRecommendation] = useState<TodayEnglishRecommendation | null>(null);
   const [weeklyPathError, setWeeklyPathError] = useState<string | null>(null);
   const [weeklyPathNotice, setWeeklyPathNotice] = useState<string | null>(null);
+  const [weeklyPathTheme, setWeeklyPathTheme] = useState<WeeklyPathWithTheme | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -453,6 +488,7 @@ export default function StudentEnglishPage() {
         let nextWeeklyEnglishPath: WeeklyEnglishPathResult | null = null;
         let nextTodayRecommendation: TodayEnglishRecommendation | null = null;
         let nextWeeklyPathError: string | null = null;
+        let nextWeeklyPathTheme: WeeklyPathWithTheme | null = null;
 
         if (user?.id) {
           const [profileRes, recommendationRes, statsRes, xpRes, badgeRes, growthRes] = await Promise.allSettled([
@@ -486,12 +522,14 @@ export default function StudentEnglishPage() {
           }
 
           try {
-            const [path, recommendation] = await Promise.all([
+            const [path, recommendation, theme] = await Promise.all([
               getWeeklyPath(user.id, "english"),
               getTodayRecommendation(user.id, "english"),
+              getWeeklyPathWithTheme(user.id, "english", computeCurrentWeekKey()).catch(() => null),
             ]);
             nextWeeklyEnglishPath = path;
             nextTodayRecommendation = recommendation;
+            nextWeeklyPathTheme = theme;
           } catch (weeklyPathLoadError) {
             console.error("student english weekly path load failed", weeklyPathLoadError);
             nextWeeklyPathError = "영어 추천 경로를 불러오지 못했어요. 잠시 후 다시 확인해 주세요.";
@@ -518,6 +556,7 @@ export default function StudentEnglishPage() {
         setWeeklyEnglishPath(nextWeeklyEnglishPath);
         setTodayRecommendation(nextTodayRecommendation);
         setWeeklyPathError(nextWeeklyPathError);
+        setWeeklyPathTheme(nextWeeklyPathTheme);
       } catch (loadError) {
         console.error("student english load failed", loadError);
         if (!mounted) return;
@@ -531,6 +570,7 @@ export default function StudentEnglishPage() {
         setWeeklyEnglishPath(null);
         setTodayRecommendation(null);
         setWeeklyPathError(null);
+        setWeeklyPathTheme(null);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -548,12 +588,18 @@ export default function StudentEnglishPage() {
   );
 
   useEffect(() => {
-    const promotedGrade = effectiveGrade ? toCurriculumGradeNumber(effectiveGrade.schoolLevel, effectiveGrade.grade) : null;
-    if (!promotedGrade) return;
-    if (GRADE_FILTERS.includes(promotedGrade)) setSelectedGrade(promotedGrade);
+    if (!effectiveGrade) return;
+    const matched = findGradeFilter(effectiveGrade.schoolLevel, effectiveGrade.grade);
+    if (matched) setSelectedFilter(matched);
   }, [effectiveGrade]);
 
-  const filteredUnits = useMemo(() => units.filter((unit) => unit.grade === selectedGrade), [selectedGrade, units]);
+  const filteredUnits = useMemo(
+    () =>
+      units.filter(
+        (unit) => unit.school_level === selectedFilter.schoolLevel && unit.grade === selectedFilter.grade
+      ),
+    [selectedFilter, units]
+  );
   const todayGoalMet = todayCompletedCount >= TODAY_GOAL;
   const weeklyGoalMet = weeklyCompletedCount >= WEEKLY_GOAL;
   const strongestCategoryLabel = categoryLabel(growthSummary.strongestCategory);
@@ -562,7 +608,7 @@ export default function StudentEnglishPage() {
   const weeklySteps = weeklyEnglishPath?.steps ?? [];
   const weeklyPathSummary = weeklySteps.length > 0 ? weeklyPathDifficultySummary(weeklySteps) : null;
 
-  const preferredGrade = effectiveGrade ? toCurriculumGradeNumber(effectiveGrade.schoolLevel, effectiveGrade.grade) : selectedGrade;
+  const preferredGrade = effectiveGrade?.grade ?? selectedFilter.grade;
   const fallbackRecommendationItems = useMemo<EnglishMissionRecommendation[]>(
     () =>
       buildSafeFallbackRecommendations({
@@ -627,22 +673,24 @@ export default function StudentEnglishPage() {
             <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="warning">{`${recommendedStep.weekdayLabel}요일 추천`}</Badge>
-                  <span className="inline-flex items-center rounded-full border border-[rgba(255,214,117,0.35)] bg-[rgba(255,214,117,0.12)] px-3 py-1 text-[11px] font-medium text-[#72243E]">
+                  <StatusChip variant="today">{`${recommendedStep.weekdayLabel}요일 추천`}</StatusChip>
+                  <StudentChip variant="today">
                     {difficultyLabel(recommendedStep.difficulty)}
-                  </span>
-                  <span className="inline-flex items-center rounded-full border border-[rgba(126,214,165,0.35)] bg-[rgba(126,214,165,0.12)] px-3 py-1 text-[11px] font-medium text-[#D8FBE6]">
+                  </StudentChip>
+                  <XpBadge>
                     +{recommendedStep.rewardXp} XP
-                  </span>
+                  </XpBadge>
                 </div>
                 <p className="mt-4 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-muted)]">오늘 할 영어</p>
                 <h2 className="mt-2 text-2xl font-semibold tracking-tight text-[var(--text)] md:text-3xl">{displayText(recommendedStep.cleanedTitle)}</h2>
                 <div className="mt-4 flex flex-wrap gap-2 text-xs text-[var(--text-muted)]">
-                  <span className="rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-3 py-1">{recommendedStep.weekdayLabel}요일</span>
-                  <span className="rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-3 py-1">{recommendedStep.unitName}</span>
-                  <span className="rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-3 py-1">{`STEP ${recommendedStep.stepOrder}`}</span>
-                  <span className="rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-3 py-1">{`${recommendedStep.estimatedMinutes}${displayText(ENGLISH_COPY.minute)}`}</span>
-                  <span className="rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-3 py-1">{recommendedStep.status}</span>
+                  <StatusChip variant="muted">{recommendedStep.weekdayLabel}요일</StatusChip>
+                  <StatusChip variant="muted">{recommendedStep.unitName}</StatusChip>
+                  <StatusChip variant="muted">{`STEP ${recommendedStep.stepOrder}`}</StatusChip>
+                  <StatusChip variant="muted">{`${recommendedStep.estimatedMinutes}${displayText(ENGLISH_COPY.minute)}`}</StatusChip>
+                  <StatusChip variant={recommendedStep.status === "completed" ? "success" : recommendedStep.status === "today" ? "today" : recommendedStep.status === "locked" ? "muted" : "info"}>
+                    {recommendedStep.status}
+                  </StatusChip>
                 </div>
                 <p className="mt-4 text-sm leading-6 text-[var(--text-muted)]">{recommendedStep.recommendationReason}</p>
                 <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -707,20 +755,21 @@ export default function StudentEnglishPage() {
           </div>
         ) : (
           <div className="space-y-4">
+            <WeeklyPathHeader theme={weeklyPathTheme} loading={loading} />
             <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
-              <span className="rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-3 py-1">난이도 흐름: {weeklyPathSummary ?? "easy -> normal -> hard"}</span>
-              <span className="rounded-full border border-[var(--border)] bg-[var(--card-soft)] px-3 py-1">{weeklyEnglishPath?.completedCount ?? 0}개 완료</span>
+              <StatusChip variant="muted">난이도 흐름: {weeklyPathSummary ?? "easy -> normal -> hard"}</StatusChip>
+              <StatusChip variant="success">{weeklyEnglishPath?.completedCount ?? 0}개 완료</StatusChip>
               {weeklyEnglishPath?.recommendedIndex !== undefined && weeklyEnglishPath.recommendedIndex >= 0 && weeklySteps[weeklyEnglishPath.recommendedIndex] && (
-                <span className="rounded-full border border-[rgba(255,214,117,0.28)] bg-[rgba(255,214,117,0.12)] px-3 py-1 text-[#72243E]">
+                <StatusChip variant="today">
                   오늘 강조: {weeklySteps[weeklyEnglishPath.recommendedIndex]?.weekdayLabel}요일
-                </span>
+                </StatusChip>
               )}
             </div>
             {weeklyEnglishPath?.completionMessage && recommendedStep?.missionId && (
-              <div className="flex flex-col gap-3 rounded-2xl border border-[#7ED6A5]/30 bg-[#7ED6A5]/10 px-4 py-4 text-sm text-[#D8FBE6] sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 rounded-2xl border border-[var(--success-text)]/30 bg-[var(--success-bg)] px-4 py-4 text-sm text-[var(--success-text)] sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="font-semibold">이번 주 완료</p>
-                  <p className="mt-1 text-xs text-[#D8FBE6]/80">{weeklyEnglishPath.completionMessage}</p>
+                  <p className="mt-1 text-xs text-[var(--success-text)]/80">{weeklyEnglishPath.completionMessage}</p>
                 </div>
                 <Link
                   href={nextRouteHref}
@@ -731,11 +780,11 @@ export default function StudentEnglishPage() {
               </div>
             )}
             {weeklyPathNotice && (
-              <div className="rounded-2xl border border-[rgba(255,214,117,0.28)] bg-[rgba(255,214,117,0.10)] px-4 py-3 text-sm text-[#72243E]">
+              <div className="rounded-2xl border border-[var(--warning-border)] bg-[var(--warning-bg)] px-4 py-3 text-sm text-[var(--warning-text)]">
                 {weeklyPathNotice}
               </div>
             )}
-            <div className="grid grid-cols-1 gap-3 xl:grid-cols-5">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
               {weeklySteps.map((step) => (
                 <WeeklyPathMissionCard
                   key={`${step.stepOrder}:${step.missionId}`}
@@ -826,15 +875,15 @@ export default function StudentEnglishPage() {
                       <p className="text-xs text-[var(--text-muted)]">{`${index + 1}. ${displayText(item.badge)}`}</p>
                       <p className="mt-2 line-clamp-2 text-base font-semibold leading-6 text-[var(--text)]">{displayText(item.mission.title)}</p>
                     </div>
-                    <span className={`shrink-0 rounded-full border px-3 py-1 text-[11px] ${tone.chip}`}>
+                    <ActionChip variant={actionChipVariant(progress)} className="shrink-0">
                       {displayText(progress ? statusText(progress) : ENGLISH_COPY.dailyRoutineBadge)}
-                    </span>
+                    </ActionChip>
                   </div>
                   <p className="mt-3 line-clamp-3 text-sm leading-6 text-[var(--text-muted)]">{displayText(item.reason)}</p>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--text-muted)]">
-                    <span className="rounded-full border border-[var(--border)] bg-[var(--card)] px-2.5 py-1">{difficultyLabel(item.mission.difficulty)}</span>
-                    <span className="rounded-full border border-[var(--border)] bg-[var(--card)] px-2.5 py-1">{displayEstimatedMinutes(item.mission.estimated_minutes)}{displayText(ENGLISH_COPY.minute)}</span>
-                    <span className="rounded-full border border-[var(--border)] bg-[var(--card)] px-2.5 py-1">{missionXpForDifficulty(item.mission.difficulty)}XP</span>
+                    <StatusChip variant="muted">{difficultyLabel(item.mission.difficulty)}</StatusChip>
+                    <StatusChip variant="muted">{displayEstimatedMinutes(item.mission.estimated_minutes)}{displayText(ENGLISH_COPY.minute)}</StatusChip>
+                    <XpBadge>{missionXpForDifficulty(item.mission.difficulty)}XP</XpBadge>
                   </div>
                   <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <span className="text-xs text-[var(--text-muted)]">{metaLine(item.mission)}</span>
@@ -842,7 +891,7 @@ export default function StudentEnglishPage() {
                       href={`/student/english/mission/${item.mission.id}`}
                       className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[var(--bg)] sm:w-auto"
                     >
-                      START
+                      시작하기
                     </Link>
                   </div>
                 </div>
@@ -856,7 +905,7 @@ export default function StudentEnglishPage() {
         <div className="rounded-[28px] border border-[var(--border)] bg-[linear-gradient(145deg,rgba(126,214,165,0.08),rgba(255,255,255,0.02))] p-4 sm:p-5 lg:p-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div className="max-w-2xl">
-              <p className="text-sm font-medium text-[#7ED6A5]">{displayText(ENGLISH_COPY.heroEyebrow)}</p>
+              <p className="text-sm font-medium text-[var(--accent)]">{displayText(ENGLISH_COPY.heroEyebrow)}</p>
               <h2 className="mt-2 line-clamp-2 text-xl font-semibold leading-tight text-[var(--text)] sm:text-2xl lg:text-[2rem]">
                 {todayMission ? displayText(todayMission.title) : displayText(ENGLISH_COPY.heroEmptyTitle)}
               </h2>
@@ -881,7 +930,7 @@ export default function StudentEnglishPage() {
         <div className="rounded-3xl border border-[var(--border)] bg-[var(--card-soft)] p-5 md:p-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="max-w-2xl">
-              <p className="text-sm font-medium text-[#7ED6A5]">{displayText(ENGLISH_COPY.growthEyebrow)}</p>
+              <p className="text-sm font-medium text-[var(--accent)]">{displayText(ENGLISH_COPY.growthEyebrow)}</p>
               <h2 className="mt-2 text-2xl font-semibold text-[var(--text)]">{displayText(ENGLISH_COPY.todayGoalTitle)}</h2>
               <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">{displayText(ENGLISH_COPY.growthDescription)}</p>
             </div>
@@ -911,18 +960,18 @@ export default function StudentEnglishPage() {
             <div className="min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-[11px] text-[var(--text-muted)]">{displayText(ENGLISH_COPY.todayGoalTarget)}</p>
-                <Badge variant={todayGoalMet ? 'success' : 'info'}>
+                <StatusChip variant={todayGoalMet ? "success" : "info"}>
                   {todayGoalMet ? displayText(ENGLISH_COPY.achieved) : `${todayCompletedCount}/${TODAY_GOAL}`}
-                </Badge>
+                </StatusChip>
               </div>
               <p className="mt-1 text-xs text-[var(--text)]">{goalLabel(todayCompletedCount, TODAY_GOAL, displayText(ENGLISH_COPY.todayGoalDone))}</p>
             </div>
             <div className="min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-[11px] text-[var(--text-muted)]">{displayText(ENGLISH_COPY.weeklyGoalTarget)}</p>
-                <Badge variant={weeklyGoalMet ? 'success' : 'neutral'}>
+                <StatusChip variant={weeklyGoalMet ? "success" : "muted"}>
                   {Math.min(weeklyCompletedCount, WEEKLY_GOAL)}/{WEEKLY_GOAL}
-                </Badge>
+                </StatusChip>
               </div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--card-soft)]">
                 <div className="h-full rounded-full bg-[var(--accent)] transition-[width]" style={{ width: `${Math.min(100, (weeklyCompletedCount / WEEKLY_GOAL) * 100)}%` }} />
@@ -932,15 +981,15 @@ export default function StudentEnglishPage() {
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
-            <div className="rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1 text-xs text-[var(--text)]">
+            <StatusChip variant="info">
               {displayText(ENGLISH_COPY.todayCompleteCount)} {todayCompletedCount}{displayText(ENGLISH_COPY.itemCountSuffix)}
-            </div>
-            <div className="rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1 text-xs text-[var(--text)]">
+            </StatusChip>
+            <StatusChip variant="muted">
               {displayText(ENGLISH_COPY.weeklyCompleteCount)} {weeklyCompletedCount}/{WEEKLY_GOAL}
-            </div>
-            <div className="rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1 text-xs text-[var(--text)]">
+            </StatusChip>
+            <StatusChip variant="today">
               {streakLabel(streakDays)}
-            </div>
+            </StatusChip>
           </div>
         </div>
       </SectionCard>
@@ -950,12 +999,12 @@ export default function StudentEnglishPage() {
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <p className="max-w-2xl text-sm leading-6 text-[var(--text-muted)]">{displayText(ENGLISH_COPY.growthMapFootnote)}</p>
             <div className="flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1 text-[var(--text)]">
+              <StatusChip variant="success">
                 {displayText(ENGLISH_COPY.strongestLabel)} / {strongestCategoryLabel}
-              </span>
-              <span className="rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1 text-[var(--text)]">
+              </StatusChip>
+              <StatusChip variant="warning">
                 {displayText(ENGLISH_COPY.weakestLabel)} / {weakestCategoryLabel}
-              </span>
+              </StatusChip>
             </div>
           </div>
 
@@ -1027,11 +1076,11 @@ export default function StudentEnglishPage() {
                   {recommendations?.nextBadgeGoal?.description ?? displayText(ENGLISH_COPY.nextGoalEmpty)}
                 </p>
               </div>
-              <Badge variant="warning">
+              <StatusChip variant="warning">
                 {recommendations?.nextBadgeGoal
                   ? `${recommendations.nextBadgeGoal.remainingCount}${displayText(ENGLISH_COPY.nextGoalRemainingSuffix)}`
                   : `2${displayText(ENGLISH_COPY.nextGoalRemainingSuffix)}`}
-              </Badge>
+              </StatusChip>
             </div>
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -1059,19 +1108,19 @@ export default function StudentEnglishPage() {
       </SectionCard>
 
       <SectionCard header={displayText(ENGLISH_COPY.gradeSectionTitle)} description={displayText(ENGLISH_COPY.gradeSectionDescription)}>
-        <div className="mb-4 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 md:grid-cols-6">
-          {GRADE_FILTERS.map((grade) => (
+        <div className="mb-4 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:grid sm:grid-cols-4 sm:overflow-visible sm:px-0 md:grid-cols-8">
+          {GRADE_FILTERS.map((filter) => (
             <button
-              key={grade}
+              key={filter.label}
               type="button"
               className={`min-h-11 shrink-0 rounded-xl border px-4 py-2 text-sm whitespace-nowrap sm:w-full ${
-                selectedGrade === grade
+                selectedFilter.label === filter.label
                   ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
                   : 'border-[var(--border)] bg-[var(--card)] text-[var(--text-muted)]'
               }`}
-              onClick={() => setSelectedGrade(grade)}
+              onClick={() => setSelectedFilter(filter)}
             >
-              {gradeLabel(grade)}
+              {filter.label}
             </button>
           ))}
         </div>
@@ -1091,13 +1140,13 @@ export default function StudentEnglishPage() {
           <div className="rounded-2xl border border-[#6A2B2B] bg-[#2A1414] p-4 text-sm text-[#FFB4B4]">{displayText(error)}</div>
         ) : filteredUnits.length === 0 ? (
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] p-4 text-sm text-[var(--text-muted)]">
-            {`${gradeLabel(selectedGrade)} ${displayText(ENGLISH_COPY.gradeSectionEmptySuffix)}`}
+            {`${selectedFilter.label} ${displayText(ENGLISH_COPY.gradeSectionEmptySuffix)}`}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {filteredUnits.map((unit) => (
               <Link key={unit.id} href={`/student/english/${unit.id}`} className="block min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 transition hover:border-[var(--accent)] sm:p-5">
-                <p className="text-xs text-[var(--text-muted)]">{`${gradeLabel(unit.grade)} ${displayText(ENGLISH_COPY.gradeUnitLabelSuffix)}`}</p>
+                <p className="text-xs text-[var(--text-muted)]">{`${gradeLabel(unit.grade, unit.school_level)} ${displayText(ENGLISH_COPY.gradeUnitLabelSuffix)}`}</p>
                 <h3 className="mt-2 line-clamp-2 text-base font-semibold leading-6 text-[var(--text)]">{displayText(unit.unit_name)}</h3>
                 <p className="mt-2 line-clamp-3 text-sm leading-6 text-[var(--text-muted)] sm:line-clamp-2">
                   {displayText(unit.description ?? unit.concept_summary, ENGLISH_COPY.unitCardFallback)}
@@ -1165,9 +1214,5 @@ export default function StudentEnglishPage() {
     </PageShell>
   );
 }
-
-
-
-
 
 

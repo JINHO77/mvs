@@ -307,45 +307,55 @@ function sanitizeSolution(step: MissionStep | null, solution: MissionSolution | 
 }
 
 function normalizeHintsFromStep(step: MissionStep | null, context?: MissionHintContext): MissionHint[] {
-  const structuredHints = (step?.hints ?? [])
-    .map((hint) => ({
-      level: hint.level,
-      text: sanitizeHintText(step, hint.text),
-    }))
-    .filter((hint): hint is MissionHint => (hint.level === 1 || hint.level === 2 || hint.level === 3) && Boolean(hint.text))
-    .sort((left, right) => left.level - right.level);
+  const rawHints = step?.hints ?? [];
 
-  if (structuredHints.length > 0) {
-    const byLevel = new Map<number, MissionHint>();
-    for (const hint of structuredHints) {
-      if (!byLevel.has(hint.level)) byLevel.set(hint.level, hint);
+  if (rawHints.length > 0) {
+    // DB에서 문자열 배열로 오는 경우: ["힌트1", "힌트2", "힌트3"]
+    if (typeof (rawHints[0] as unknown) === "string") {
+      const result = (rawHints as unknown as string[])
+        .filter((h) => typeof h === "string" && h.trim() !== "")
+        .slice(0, 3)
+        .map((text, i) => {
+          const safe = sanitizeHintText(step, text);
+          return safe ? { level: (i + 1) as 1 | 2 | 3, text: safe } : null;
+        })
+        .filter((h): h is MissionHint => h !== null);
+      if (result.length > 0) return result;
     }
-    return [1, 2, 3]
-      .map((level) => byLevel.get(level))
-      .filter((hint): hint is MissionHint => Boolean(hint));
+
+    // 객체 배열로 오는 경우: [{level: 1, text: "..."}, ...]
+    const structuredHints = rawHints
+      .map((hint) => ({
+        level: hint.level,
+        text: sanitizeHintText(step, hint.text),
+      }))
+      .filter((hint): hint is MissionHint => (hint.level === 1 || hint.level === 2 || hint.level === 3) && Boolean(hint.text))
+      .sort((a, b) => a.level - b.level);
+
+    if (structuredHints.length > 0) {
+      const byLevel = new Map<number, MissionHint>();
+      for (const hint of structuredHints) {
+        if (!byLevel.has(hint.level)) byLevel.set(hint.level, hint);
+      }
+      return [1, 2, 3]
+        .map((level) => byLevel.get(level))
+        .filter((hint): hint is MissionHint => Boolean(hint));
+    }
   }
 
+  // 2순위: hintLevel1/2/3 개별 필드 — 코드 템플릿으로 절대 폴백하지 않음
   const explicit = [
-    sanitizeHintText(step, step?.hintLevel1),
-    sanitizeHintText(step, step?.hintLevel2),
-    sanitizeHintText(step, step?.hintLevel3),
-    sanitizeHintText(step, step?.hint),
+    sanitizeHintText(step, step?.hintLevel1 ?? null),
+    sanitizeHintText(step, step?.hintLevel2 ?? null),
+    sanitizeHintText(step, step?.hintLevel3 ?? null),
+    sanitizeHintText(step, step?.hint ?? null),
   ].filter((hint): hint is string => Boolean(hint));
 
-  const templates = context?.subject === "english"
-    ? getEnglishHintTemplates()
-    : getMathHintTemplates(inferMathHintCategory(step, context));
+  if (explicit.length === 0) return [];
 
-  const merged: MissionHint[] = [];
-  for (const template of templates) {
-    const explicitText = explicit[template.level - 1];
-    const text = explicitText ?? template.text;
-    if (!merged.some((item) => item.text === text)) {
-      merged.push({ level: template.level, text });
-    }
-  }
-
-  return merged;
+  return explicit
+    .slice(0, 3)
+    .map((text, i) => ({ level: (i + 1) as 1 | 2 | 3, text }));
 }
 
 export function buildMissionSolution(step: MissionStep | null, context?: MissionHintContext): MissionSolution {
@@ -447,6 +457,15 @@ function resolveAcceptedUnits(step: AnswerRuleConfig): string[] {
     : DEFAULT_ACCEPTED_UNITS;
 }
 
+// Normalize for flexible text comparison: strip whitespace, punctuation, lowercase
+function flexNormalizeText(s: string): string {
+  return s.replace(/[\s,\.。、\-=]/g, "").toLowerCase();
+}
+
+function extractDigitGroups(s: string): string[] {
+  return s.match(/\d+/g) ?? [];
+}
+
 export function isEquivalentAnswer(
   userInput: unknown,
   expectedAnswer: unknown,
@@ -458,23 +477,59 @@ export function isEquivalentAnswer(
   const candidates = buildCandidateValues(step, expectedAnswer).map((candidate) => normalizeAnswerInput(candidate, acceptedUnits));
   const ignoreCase = options?.ignoreCase ?? false;
 
-  return candidates.some((candidate) => {
+  // Standard matching: numeric exact or text exact
+  const standardMatch = candidates.some((candidate) => {
     if (user.numericValue !== null && candidate.numericValue !== null) {
       return user.numericValue === candidate.numericValue;
     }
+    return ignoreCase ? user.lowerText === candidate.lowerText : user.text === candidate.text;
+  });
+  if (standardMatch) return true;
 
-    if (ignoreCase) {
-      return user.lowerText === candidate.lowerText;
+  // Skip flexible matching for explicitly numeric/equation types
+  if (step.answerType === "number" || step.answerType === "equation") return false;
+
+  const userFlex = flexNormalizeText(user.text);
+  if (!userFlex) return false;
+
+  // 1. acceptedAnswers keyword containment: any accepted keyword in user answer (or vice versa)
+  const acceptedList = step.acceptedAnswers ?? [];
+  if (acceptedList.length > 0) {
+    return acceptedList.some((accepted) => {
+      const acceptedFlex = flexNormalizeText(accepted);
+      return userFlex.includes(acceptedFlex) || acceptedFlex.includes(userFlex);
+    });
+  }
+
+  // 2. Candidate-based flexible check
+  return candidates.some((candidate) => {
+    const candidateFlex = flexNormalizeText(candidate.text);
+    if (!candidateFlex) return false;
+
+    // 2-1. Containment check (normalized)
+    if (
+      userFlex === candidateFlex ||
+      candidateFlex.includes(userFlex) ||
+      userFlex.includes(candidateFlex)
+    ) {
+      return true;
     }
 
-    return user.text === candidate.text;
+    // 2-2. Key number extraction: any key number from expected answer in user answer
+    const expectedNums = extractDigitGroups(candidateFlex);
+    const userNums = extractDigitGroups(userFlex);
+    if (expectedNums.length > 0 && userNums.length > 0) {
+      return expectedNums.some((n) => userNums.includes(n));
+    }
+
+    return false;
   });
 }
 
 export function buildMissionHintSequence(step: MissionStep | null, context?: MissionHintContext): MissionHintStage[] {
   return getNormalizedHints(step, context).map((hint) => ({
     level: hint.level,
-    label: hint.level === 1 ? "방향 힌트" : hint.level === 2 ? "풀이 힌트" : "거의 다 왔어요 힌트",
+    label: `힌트 ${hint.level}`,
     buttonLabel: `힌트 ${hint.level} 보기`,
     text: hint.text,
   }));
