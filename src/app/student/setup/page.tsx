@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import PageShell from "@/components/ui/PageShell";
 import SectionCard from "@/components/ui/SectionCard";
 import GuardianInvitationCard from "@/components/student/GuardianInvitationCard";
+import PasswordChangeCard from "@/components/account/PasswordChangeCard";
 import { supabase } from "@/lib/supabaseClient";
 
 type SchoolLevel = "elementary" | "middle" | "high";
@@ -266,6 +267,8 @@ export default function StudentSetupPage() {
           <GuardianInvitationCard studentId={studentId} />
         </SectionCard>
       )}
+
+      <PasswordChangeCard />
     </PageShell>
   );
 }

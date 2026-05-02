@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import BadgeShowcasePanel from "@/components/badges/BadgeShowcasePanel";
 import PushSubscribeButton from "@/components/pwa/PushSubscribeButton";
+import PasswordChangeCard from "@/components/account/PasswordChangeCard";
 import PageShell from "@/components/ui/PageShell";
 import { formatInterestTagSummary, interestTagLabel, interestTagOptions, normalizeInterestTagSelection, type InterestTagKey } from "@/constants/interestTags";
 import { studentHomeCopy } from "@/constants/studentHomeCopy";
@@ -884,6 +885,8 @@ export default function StudentDashboardPage() {
                       </button>
                     </div>
                   </div>
+
+                  <PasswordChangeCard />
 
                   <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-5">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

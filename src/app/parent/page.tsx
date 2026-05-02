@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import PageShell from "@/components/ui/PageShell";
@@ -455,6 +456,14 @@ export default function ParentDashboardPage() {
       title="학부모 대시보드"
       subtitle="자녀의 학습 리포트를 확인하고 상담과 알림을 한 번에 관리하세요."
       maxWidthClassName="max-w-5xl"
+      actions={
+        <Link
+          href="/parent/account"
+          className="inline-flex items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-2 text-sm font-medium text-[var(--text)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+        >
+          👤 내 정보
+        </Link>
+      }
     >
       <div className="space-y-6">
         {error && (

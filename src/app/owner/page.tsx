@@ -199,6 +199,14 @@ export default function OwnerDashboardPage() {
       subtitle="오늘 처리할 일부터 운영 현황, 빠른 실행까지 한 화면에서 확인합니다."
       maxWidthClassName="max-w-6xl"
       contentClassName="space-y-5 md:space-y-6"
+      actions={
+        <Link
+          href="/owner/account"
+          className="inline-flex items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-2 text-sm font-medium text-[var(--text)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+        >
+          👤 내 정보
+        </Link>
+      }
     >
       <SectionCard header="오늘 처리할 일" description="지금 확인하고 처리해야 할 항목입니다.">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">

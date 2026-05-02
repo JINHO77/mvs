@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #1f2937;
+  background: #fafaf7;
+}
+
+body {
+  min-height: 100vh;
+  background: #fafaf7;
+}
+
+textarea,
+input,
+select {
+  outline: none;
+}

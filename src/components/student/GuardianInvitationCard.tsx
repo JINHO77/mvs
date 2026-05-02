@@ -43,7 +43,7 @@ function formatExpiry(value: string | null): string {
 }
 
 function buildLinkUrl(code: string): string {
-  const path = `/parent/onboarding/link?code=${encodeURIComponent(code)}`;
+  const path = `/link-student?code=${encodeURIComponent(code)}`;
   if (typeof window === "undefined") return path;
   return `${window.location.origin}${path}`;
 }
