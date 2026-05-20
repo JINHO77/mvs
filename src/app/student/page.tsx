@@ -444,6 +444,84 @@ export default function StudentDashboardPage() {
         )}
 
         <section className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+          <article className="flex min-h-[320px] flex-col rounded-[24px] border border-[var(--border)] bg-[var(--card)] p-8 shadow-[var(--shadow)] transition duration-200 hover:-translate-y-[2px] hover:border-[var(--accent)]">
+            <div className="flex min-h-[112px] items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <h3 className="text-2xl font-semibold text-[var(--text)]">{studentHomeCopy.alertsTitle}</h3>
+                <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">{studentHomeCopy.alertsDescription}</p>
+              </div>
+              <span className="inline-flex shrink-0 whitespace-nowrap rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-3.5 py-1.5 text-xs font-semibold text-[var(--accent)]">
+                {`${studentHomeCopy.unreadCountLabel} ${loading ? studentHomeCopy.emptyValue : unreadCount}`}
+              </span>
+            </div>
+            <div className="mt-6 space-y-3">
+              {recentAlerts.length === 0 ? (
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] px-4 py-5 text-sm text-[var(--text-muted)]">
+                  {loading ? studentHomeCopy.alertsLoading : studentHomeCopy.alertsEmpty}
+                </div>
+              ) : (
+                recentAlerts.map((item) => (
+                  <Link key={item.id} href={`/announcements/${item.id}`} className="block rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] px-4 py-4 transition-colors hover:border-[var(--accent)]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <span className="inline-flex rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-muted)]">
+                          {alertCategoryLabel(item.category)}
+                        </span>
+                        <p className="mt-2 line-clamp-2 text-sm font-medium leading-6 text-[var(--text)]">
+                          {normalizeDisplayText(item.title, studentHomeCopy.alertFallbackTitle)}
+                        </p>
+                      </div>
+                      <span className="shrink-0 pt-0.5 text-xs text-[var(--text-muted)]/80">{formatAlertDate(item.created_at)}</span>
+                    </div>
+                  </Link>
+                ))
+              )}
+            </div>
+            <div className="mt-auto pt-8">
+              <Link href="/announcements" className="inline-flex w-full items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] px-5 py-3 text-sm font-medium text-[var(--text)] transition-colors hover:border-[var(--accent)] sm:w-auto">
+                {studentHomeCopy.allAlertsLabel}
+              </Link>
+            </div>
+          </article>
+
+          <article className="flex min-h-[320px] flex-col rounded-[24px] border border-[var(--border)] bg-[var(--card)] p-8 shadow-[var(--shadow)] transition duration-200 hover:-translate-y-[2px] hover:border-[var(--accent)]">
+            <div className="flex min-h-[112px] flex-col">
+              <h3 className="text-2xl font-semibold text-[var(--text)]">{studentHomeCopy.reportTitle}</h3>
+              <p className="mt-4 text-sm leading-6 text-[var(--text-muted)]">
+                {studentHomeCopy.reportDescription}
+              </p>
+            </div>
+            {!latestReport ? (
+              <div className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] px-4 py-5 text-sm text-[var(--text-muted)]">
+                {studentHomeCopy.reportEmpty}
+              </div>
+            ) : (
+              <>
+                <div className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] p-4">
+                  <p className="text-xs text-[var(--text-muted)]">{studentHomeCopy.reportMonthLabel}</p>
+                  <p className="mt-2 text-lg font-semibold text-[var(--text)]">{formatReportMonth(latestReport.month)}</p>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${latestReport.student_read ? "border-[#7DD3A8] bg-[rgba(125,211,168,0.12)] text-[#7DD3A8]" : "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"}`}>
+                    {latestReport.student_read ? studentHomeCopy.reportStudentDone : studentHomeCopy.reportStudentPending}
+                  </span>
+                  <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${latestReport.parent_total_count === 0 ? "border-[var(--border)] bg-[var(--card-soft)] text-[var(--text-muted)]" : latestReport.parent_all_read ? "border-[#7DD3A8] bg-[rgba(125,211,168,0.12)] text-[#7DD3A8]" : "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"}`}>
+                    {latestReport.parent_total_count === 0 ? studentHomeCopy.reportParentNone : latestReport.parent_all_read ? studentHomeCopy.reportParentDone : studentHomeCopy.reportParentPending}
+                  </span>
+                </div>
+                <p className="mt-4 text-sm text-[var(--text-muted)]">{`${studentHomeCopy.reportIssuedLabel} ${formatAlertDate(latestReport.created_at)}`}</p>
+              </>
+            )}
+            <div className="mt-auto flex flex-col gap-3 pt-8 sm:flex-row">
+              <Link href={latestReport ? `/reports/${latestReport.id}` : "/student/reports"} className="inline-flex w-full items-center justify-center rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[var(--bg)] transition-opacity hover:opacity-95 sm:w-auto">
+                {studentHomeCopy.reportViewButton}
+              </Link>
+              <Link href="/student/reports" className="inline-flex w-full items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] px-5 py-3 text-sm font-medium text-[var(--text)] transition-colors hover:border-[var(--accent)] sm:w-auto">
+                {studentHomeCopy.reportAllButton}
+              </Link>
+            </div>
+          </article>
+
           {/* ── 오늘의 학습 미션 (수학 + 영어 통합) ── */}
           <article className="relative flex min-h-[320px] flex-col overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)] transition duration-200 hover:-translate-y-[2px]">
             {/* 배경 그라데이션 장식 */}
@@ -627,84 +705,6 @@ export default function StudentDashboardPage() {
               >
                 인성·협력 도전
               </button>
-            </div>
-          </article>
-
-          <article className="flex min-h-[320px] flex-col rounded-[24px] border border-[var(--border)] bg-[var(--card)] p-8 shadow-[var(--shadow)] transition duration-200 hover:-translate-y-[2px] hover:border-[var(--accent)]">
-            <div className="flex min-h-[112px] flex-col">
-              <h3 className="text-2xl font-semibold text-[var(--text)]">{studentHomeCopy.reportTitle}</h3>
-              <p className="mt-4 text-sm leading-6 text-[var(--text-muted)]">
-                {studentHomeCopy.reportDescription}
-              </p>
-            </div>
-            {!latestReport ? (
-              <div className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] px-4 py-5 text-sm text-[var(--text-muted)]">
-                {studentHomeCopy.reportEmpty}
-              </div>
-            ) : (
-              <>
-                <div className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] p-4">
-                  <p className="text-xs text-[var(--text-muted)]">{studentHomeCopy.reportMonthLabel}</p>
-                  <p className="mt-2 text-lg font-semibold text-[var(--text)]">{formatReportMonth(latestReport.month)}</p>
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${latestReport.student_read ? "border-[#7DD3A8] bg-[rgba(125,211,168,0.12)] text-[#7DD3A8]" : "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"}`}>
-                    {latestReport.student_read ? studentHomeCopy.reportStudentDone : studentHomeCopy.reportStudentPending}
-                  </span>
-                  <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${latestReport.parent_total_count === 0 ? "border-[var(--border)] bg-[var(--card-soft)] text-[var(--text-muted)]" : latestReport.parent_all_read ? "border-[#7DD3A8] bg-[rgba(125,211,168,0.12)] text-[#7DD3A8]" : "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"}`}>
-                    {latestReport.parent_total_count === 0 ? studentHomeCopy.reportParentNone : latestReport.parent_all_read ? studentHomeCopy.reportParentDone : studentHomeCopy.reportParentPending}
-                  </span>
-                </div>
-                <p className="mt-4 text-sm text-[var(--text-muted)]">{`${studentHomeCopy.reportIssuedLabel} ${formatAlertDate(latestReport.created_at)}`}</p>
-              </>
-            )}
-            <div className="mt-auto flex flex-col gap-3 pt-8 sm:flex-row">
-              <Link href={latestReport ? `/reports/${latestReport.id}` : "/student/reports"} className="inline-flex w-full items-center justify-center rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[var(--bg)] transition-opacity hover:opacity-95 sm:w-auto">
-                {studentHomeCopy.reportViewButton}
-              </Link>
-              <Link href="/student/reports" className="inline-flex w-full items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] px-5 py-3 text-sm font-medium text-[var(--text)] transition-colors hover:border-[var(--accent)] sm:w-auto">
-                {studentHomeCopy.reportAllButton}
-              </Link>
-            </div>
-          </article>
-
-          <article className="flex min-h-[320px] flex-col rounded-[24px] border border-[var(--border)] bg-[var(--card)] p-8 shadow-[var(--shadow)] transition duration-200 hover:-translate-y-[2px] hover:border-[var(--accent)]">
-            <div className="flex min-h-[112px] items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <h3 className="text-2xl font-semibold text-[var(--text)]">{studentHomeCopy.alertsTitle}</h3>
-                <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">{studentHomeCopy.alertsDescription}</p>
-              </div>
-              <span className="inline-flex shrink-0 whitespace-nowrap rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-3.5 py-1.5 text-xs font-semibold text-[var(--accent)]">
-                {`${studentHomeCopy.unreadCountLabel} ${loading ? studentHomeCopy.emptyValue : unreadCount}`}
-              </span>
-            </div>
-            <div className="mt-6 space-y-3">
-              {recentAlerts.length === 0 ? (
-                <div className="rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] px-4 py-5 text-sm text-[var(--text-muted)]">
-                  {loading ? studentHomeCopy.alertsLoading : studentHomeCopy.alertsEmpty}
-                </div>
-              ) : (
-                recentAlerts.map((item) => (
-                  <Link key={item.id} href={`/announcements/${item.id}`} className="block rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] px-4 py-4 transition-colors hover:border-[var(--accent)]">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <span className="inline-flex rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-muted)]">
-                          {alertCategoryLabel(item.category)}
-                        </span>
-                        <p className="mt-2 line-clamp-2 text-sm font-medium leading-6 text-[var(--text)]">
-                          {normalizeDisplayText(item.title, studentHomeCopy.alertFallbackTitle)}
-                        </p>
-                      </div>
-                      <span className="shrink-0 pt-0.5 text-xs text-[var(--text-muted)]/80">{formatAlertDate(item.created_at)}</span>
-                    </div>
-                  </Link>
-                ))
-              )}
-            </div>
-            <div className="mt-auto pt-8">
-              <Link href="/announcements" className="inline-flex w-full items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--card-soft)] px-5 py-3 text-sm font-medium text-[var(--text)] transition-colors hover:border-[var(--accent)] sm:w-auto">
-                {studentHomeCopy.allAlertsLabel}
-              </Link>
             </div>
           </article>
         </section>
